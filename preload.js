@@ -31,9 +31,10 @@ function automationScript() {
 
     // Define selectors and variables
     const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
-    const MESSAGE_ITEM_SELECTOR = 'li[class*="messageListItem"]';
+    const MESSAGE_ITEM_SELECTOR = 'li[id^="chat-messages"]';
     const MESSAGE_CONTENT_SELECTOR = 'div[class*="markup"]';
-    const MESSAGE_USERNAME_SELECTOR = 'h3[class*="header"] span[class*="username"]';
+    const EMBED_CONTENT_SELECTOR = 'div[class*="embedDescription"], div[class*="embedFieldValue"]';
+    const MESSAGE_USERNAME_SELECTOR = 'h3[class^="header"] span[class^="username"]';
     const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
     const CHECK_INTERVAL = 1000; // Check every second
     const processedMessages = new Set();
@@ -154,13 +155,41 @@ function automationScript() {
                 }
                 processedMessages.add(msgId);
 
+                console.log("MESSAGE ID = ", msgId);
+                console.log("FULL MESSAGE = ", message);
+                
                 // Try to get the sender's username
                 let senderElement = message.querySelector(MESSAGE_USERNAME_SELECTOR);
                 let sender = senderElement ? senderElement.innerText : 'Unknown';
 
+                console.log("SENDER = ", sender);
+
                 // Get the message content
                 let contentElement = message.querySelector(MESSAGE_CONTENT_SELECTOR);
-                let content = contentElement ? contentElement.innerText : '';
+                let content = contentElement ? contentElement.innerText.trim() : '';
+
+                if (content) console.log("CONTENT = ", content);
+
+                // If content is empty, check for embeds
+                if (!content) {
+                    console.log("CONTENT IS EMPTY. Checking for embeds...");
+                    // Try to extract content from embeds
+                    const embedElements = message.querySelectorAll(EMBED_CONTENT_SELECTOR);
+                    if (embedElements.length > 0) {
+                        console.log("EMBEDS FOUND. Extracting content...");
+
+                        let embedContentArray = [];
+                        embedElements.forEach((embed) => {
+                            embedContentArray.push(embed.innerText.trim());
+                        });
+                        content = embedContentArray.join('\n');
+                        console.log('Extracted content from embed:', content);
+                    }
+                    else
+                    {
+                        console.log("NO EMBEDS FOUND.");
+                    }
+                }
 
                 console.log(`Processing message ID: ${msgId}`);
                 console.log(`Sender: ${sender}`);
@@ -173,7 +202,7 @@ function automationScript() {
                         currentMessage.state = 'waiting_for_bot_response';
                     } else {
                         // Ignore and mark as read
-                        console.log('Ignoring message while waiting for echo:', content);
+                        console.log('[3] Ignoring message while waiting for echo:', content);
                     }
                 } else if (currentMessage.state === 'waiting_for_bot_response') {
                     if (sender === currentMessage.botUsername) {
@@ -185,11 +214,11 @@ function automationScript() {
                         currentMessage = null;
                     } else {
                         // Ignore and mark as read
-                        console.log('Ignoring message while waiting for bot response:', content);
+                        console.log('[4] Ignoring message while waiting for bot response:', content);
                     }
                 } else {
                     // Ignore messages
-                    console.log('Ignoring message in unknown state:', content);
+                    console.log('[5] Ignoring message in unknown state:', content);
                 }
             });
 
