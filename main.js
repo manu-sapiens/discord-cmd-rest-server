@@ -15,7 +15,7 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js') // Load the preload script
         },
     });
 
@@ -47,24 +47,37 @@ function createWindow() {
     Menu.setApplicationMenu(menu);
 }
 
-// Ensure the clipboard is set to only the incoming message text
+// IPC handlers for clipboard operations
+ipcMain.on('clipboard-write', (event, text) => {
+    clipboard.writeText(text);
+});
+
+ipcMain.handle('clipboard-read', () => {
+    return clipboard.readText();
+});
+
+// Start the REST server and automation script (same as previously)
 function startRestServer() {
     console.log("----- Starting REST server -----");
     const server = express();
     server.use(express.json());
 
-    server.post('/send-message', async function (req, res) {
+    server.post('/send-message', async function (req, res) 
+    {
         const { message, botUsername, humanUsername } = req.body;
-
+    
         if (!message || !botUsername || !humanUsername) {
             return res.status(400).send("Message, botUsername, and humanUsername are required.");
         }
-
+    
         try {
-            // Log and set clipboard explicitly with only the message text
-            console.log("Setting clipboard with message:", message);
+            // Clear the clipboard to ensure no previous data is present
+            clipboard.clear();
             clipboard.writeText(message);
-
+    
+            // Confirm in logs that the clipboard was set to the correct message
+            console.log("Clipboard content set to:", clipboard.readText());
+    
             // Start the automation script
             const response = await automationScript(win, botUsername, humanUsername);
             res.json({ response });
@@ -73,25 +86,24 @@ function startRestServer() {
             res.status(500).send("Failed to retrieve response.");
         }
     });
-
+    
     server.listen(SERVER_PORT, function () {
         console.log(`REST server listening on port ${SERVER_PORT}`);
     });
-}
+    }
 
 // Define automation script to run in renderer process
 function automationScript(win, botUsername, humanUsername) {
     return new Promise(function (resolve) {
         function automation(HUMAN_USERNAME, BOT_USERNAME) {
             const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
-            const CHECK_INTERVAL = 2000;
 
             async function pasteMessage(messageBox) {
                 messageBox.focus();
-
-                const text = await window.clipboard.readText();
-                console.log("Pasting message:", text); // Log to verify message content
-
+            
+                const text = await window.clipboard.readText(); // Read from the clipboard using the bridge
+                console.log("Pasting message:", text); // Verify that the correct text is pasted
+            
                 const pasteEvent = new ClipboardEvent('paste', {
                     clipboardData: new DataTransfer(),
                     bubbles: true,
@@ -100,6 +112,7 @@ function automationScript(win, botUsername, humanUsername) {
                 messageBox.dispatchEvent(pasteEvent);
                 messageBox.dispatchEvent(new Event('input', { bubbles: true }));
             }
+            
 
             async function sendCommand() {
                 const messageBox = document.querySelector(MESSAGE_BOX_SELECTOR);
