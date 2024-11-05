@@ -32,6 +32,13 @@
         existingMessages.forEach((message) => {
             const msgId = message.getAttribute('id');
             processedMessages.add(msgId);
+            // display the message content:
+            const senderElement = message.querySelector(MESSAGE_USERNAME_CLASS);
+            const sender = senderElement ? senderElement.innerText : 'Unknown';
+            const contentElement = message.querySelector(MESSAGE_CONTENT_CLASS);
+            const content = contentElement ? contentElement.innerText : '';
+            console.log('Existing message:', { msgId, sender, content });
+            
         });
 
         console.log('Initialized processed messages with existing messages.');
@@ -110,9 +117,15 @@
         const TIMEOUT = 60000; // 60 seconds timeout
 
         function checkMessages() {
-            if (!currentMessage) return;
+            console.log("checking messages");
+            if (!currentMessage) 
+            {
+                console.log("no current message. returning");
+                return;
+            }
 
-            if (Date.now() - currentMessage.startTime > TIMEOUT) {
+            if (Date.now() - currentMessage.startTime > TIMEOUT) 
+            {
                 console.error('Timeout waiting for bot response');
                 ipcRenderer.sendResponseToMain(currentMessage.id, 'Timeout waiting for bot response');
                 currentMessage = null;
@@ -120,24 +133,38 @@
             }
 
             const messages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
-            messages.forEach((message) => {
-                const msgId = message.getAttribute('id');
-                if (processedMessages.has(msgId)) return;
-                processedMessages.add(msgId);
+            console.log("messages: ", messages);
+            console.log("# of messages: ", messages.length);
 
+            messages.forEach((message) => 
+                {
+                const msgId = message.getAttribute('id');
                 const senderElement = message.querySelector(MESSAGE_USERNAME_CLASS);
                 const sender = senderElement ? senderElement.innerText : 'Unknown';
                 const contentElement = message.querySelector(MESSAGE_CONTENT_CLASS);
                 const content = contentElement ? contentElement.innerText : '';
 
+                console.log("Looking at: ", { msgId, sender, content });
+
+                if (processedMessages.has(msgId)) 
+                {
+                    console.log('Already seen:', { msgId, sender, content });
+                    return;
+                }
+                processedMessages.add(msgId);
+
+                current_username = currentMessage.humanUsername;
+                current_text = currentMessage.text;
+                console.log('Current message:', { current_state, current_username, current_text });
                 if (currentMessage.state === 'waiting_for_echo') {
-                    if (sender === currentMessage.humanUsername && content === currentMessage.text) {
+                    console.log("waiting for echo of this: ", { current_username,  current_text });
+                    if (sender === current_username && content ===current_text) {
                         // User's message echoed back
                         console.log('User message confirmed sent.');
                         currentMessage.state = 'waiting_for_bot_response';
                     } else {
                         // Ignore and mark as read
-                        console.log('Ignoring message while waiting for echo:', content);
+                        console.log('[1] Ignoring message while waiting for echo:', {content, sender, msgId});
                     }
                 } else if (currentMessage.state === 'waiting_for_bot_response') {
                     if (sender === currentMessage.botUsername) {
@@ -149,7 +176,7 @@
                         currentMessage = null;
                     } else {
                         // Ignore and mark as read
-                        console.log('Ignoring message while waiting for bot response:', content);
+                        console.log('[2] Ignoring message while waiting for bot response:', content);
                     }
                 } else {
                     // Ignore messages

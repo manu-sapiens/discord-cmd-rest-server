@@ -31,9 +31,9 @@ function automationScript() {
 
     // Define selectors and variables
     const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
-    const MESSAGE_ITEM_SELECTOR = '[id^="chat-messages-"]';
-    const MESSAGE_USERNAME_CLASS = '.headerText-3Uvj1Y';
-    const MESSAGE_CONTENT_CLASS = '.markup-eYLPri';
+    const MESSAGE_ITEM_SELECTOR = 'li[class*="messageListItem"]';
+    const MESSAGE_CONTENT_SELECTOR = 'div[class*="markup"]';
+    const MESSAGE_USERNAME_SELECTOR = 'h3[class*="header"] span[class*="username"]';
     const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
     const CHECK_INTERVAL = 1000; // Check every second
     const processedMessages = new Set();
@@ -53,7 +53,7 @@ function automationScript() {
         // Mark existing messages as processed
         const existingMessages = messageContainer.querySelectorAll(MESSAGE_ITEM_SELECTOR);
         existingMessages.forEach((message) => {
-            const msgId = message.getAttribute('id');
+            const msgId = message.getAttribute('id') || message.getAttribute('data-list-item-id');
             processedMessages.add(msgId);
         });
 
@@ -145,18 +145,29 @@ function automationScript() {
             }
 
             const messages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
+            console.log(`Found ${messages.length} messages in the chat.`);
             messages.forEach((message) => {
-                const msgId = message.getAttribute('id');
-                if (processedMessages.has(msgId)) return;
+                const msgId = message.getAttribute('id') || message.getAttribute('data-list-item-id');
+                if (processedMessages.has(msgId)) {
+                    // Already processed this message
+                    return;
+                }
                 processedMessages.add(msgId);
 
-                const senderElement = message.querySelector(MESSAGE_USERNAME_CLASS);
-                const sender = senderElement ? senderElement.innerText : 'Unknown';
-                const contentElement = message.querySelector(MESSAGE_CONTENT_CLASS);
-                const content = contentElement ? contentElement.innerText : '';
+                // Try to get the sender's username
+                let senderElement = message.querySelector(MESSAGE_USERNAME_SELECTOR);
+                let sender = senderElement ? senderElement.innerText : 'Unknown';
+
+                // Get the message content
+                let contentElement = message.querySelector(MESSAGE_CONTENT_SELECTOR);
+                let content = contentElement ? contentElement.innerText : '';
+
+                console.log(`Processing message ID: ${msgId}`);
+                console.log(`Sender: ${sender}`);
+                console.log(`Content: ${content}`);
 
                 if (currentMessage.state === 'waiting_for_echo') {
-                    if (sender === currentMessage.humanUsername && content === currentMessage.text) {
+                    if ((sender === 'Unknown' || sender === currentMessage.humanUsername) && content === currentMessage.text) {
                         // User's message echoed back
                         console.log('User message confirmed sent.');
                         currentMessage.state = 'waiting_for_bot_response';
