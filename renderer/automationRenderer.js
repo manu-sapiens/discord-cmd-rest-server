@@ -1,33 +1,10 @@
-// preload.js
-const { contextBridge, ipcRenderer } = require('electron');
+// renderer/automationRenderer.js
 
-// Expose IPC methods to the renderer process
-contextBridge.exposeInMainWorld('electronAPI', {
-    receiveMessageFromMain: (callback) => {
-        ipcRenderer.on('send-message-to-renderer', (event, messageData) => {
-            callback(messageData);
-        });
-    },
-    sendResponseToMain: (messageId, response) => {
-        ipcRenderer.send('message-response', { messageId, response });
-    },
-});
+(function () {
+    console.log("Automation script running in renderer process...");
 
-// Listen for 'start-automation' message from the main process
-ipcRenderer.on('start-automation', () => {
-    if (window.automationStarted) {
-        console.log("Automation already started.");
-        return;
-    }
-    window.automationStarted = true;
-    automationScript(); // Start the automation script
-});
-
-function automationScript() {
-    console.log("Automation script running in preload script...");
-
-    // Use ipcRenderer for IPC communication
-    const ipc = ipcRenderer;
+    // Use window.electronAPI for IPC communication
+    const ipcRenderer = window.electronAPI;
 
     // Define selectors and variables
     const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
@@ -45,13 +22,13 @@ function automationScript() {
     function initialize() {
         messageContainer = document.querySelector(MESSAGE_CONTAINER_SELECTOR);
         if (!messageContainer) {
-            console.error('Message container not found. Retrying in 1 second...');
+            console.error('Message container not found');
             setTimeout(initialize, 1000);
             return;
         }
 
         // Mark existing messages as processed
-        const existingMessages = messageContainer.querySelectorAll(MESSAGE_ITEM_SELECTOR);
+        const existingMessages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
         existingMessages.forEach((message) => {
             const msgId = message.getAttribute('id');
             processedMessages.add(msgId);
@@ -62,13 +39,13 @@ function automationScript() {
     initialize();
 
     // Listen for messages from main process via IPC
-    ipc.on('send-message-to-renderer', (event, messageData) => {
+    ipcRenderer.receiveMessageFromMain((messageData) => {
         const { messageId, messageText, botUsername, humanUsername } = messageData;
         console.log('Received message to send:', messageText);
 
         if (currentMessage) {
             console.error('A message is already being processed.');
-            ipc.send('message-response', { messageId, response: 'Another message is currently being processed.' });
+            ipcRenderer.sendResponseToMain(messageId, 'Another message is currently being processed.');
             return;
         }
 
@@ -119,11 +96,9 @@ function automationScript() {
                 bubbles: true,
             });
             messageBox.dispatchEvent(enterEvent);
-
-            console.log('Message sent:', message.text);
         } else {
             console.error('Message box not found');
-            ipc.send('message-response', { messageId: message.id, response: 'Message box not found' });
+            ipcRenderer.sendResponseToMain(message.id, 'Message box not found');
             currentMessage = null;
         }
     }
@@ -139,7 +114,7 @@ function automationScript() {
 
             if (Date.now() - currentMessage.startTime > TIMEOUT) {
                 console.error('Timeout waiting for bot response');
-                ipc.send('message-response', { messageId: currentMessage.id, response: 'Timeout waiting for bot response' });
+                ipcRenderer.sendResponseToMain(currentMessage.id, 'Timeout waiting for bot response');
                 currentMessage = null;
                 return;
             }
@@ -170,7 +145,7 @@ function automationScript() {
                         console.log('Bot response received:', content);
 
                         // Send response back to main process
-                        ipc.send('message-response', { messageId: currentMessage.id, response: content });
+                        ipcRenderer.sendResponseToMain(currentMessage.id, content);
                         currentMessage = null;
                     } else {
                         // Ignore and mark as read
@@ -178,7 +153,6 @@ function automationScript() {
                     }
                 } else {
                     // Ignore messages
-                    console.log('Ignoring message in unknown state:', content);
                 }
             });
 
@@ -190,4 +164,4 @@ function automationScript() {
 
         checkMessages();
     }
-}
+})();
