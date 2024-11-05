@@ -1,22 +1,11 @@
 const { app, BrowserWindow, Menu, ipcMain, clipboard } = require('electron');
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
+const automationScript = require('./automation'); // Import automationScript from automation.js
 
 let win;
 const HUMAN_USERNAME = 'manu_mercs';
 const SERVER_PORT = 3000;
-
-// Handler for clipboard-read
-ipcMain.handle('clipboard-read', async () => {
-    return clipboard.readText();
-});
-
-// Handler for clipboard-write
-ipcMain.on('clipboard-write', (event, text) => {
-    clipboard.writeText(text);
-});
-
 
 function createWindow() {
     win = new BrowserWindow({
@@ -42,7 +31,7 @@ function createWindow() {
                     label: 'Start Automation Test',
                     click: async function () {
                         try {
-                            await startAutomation(win);
+                            await automationScript(win, 'bot_username', HUMAN_USERNAME);
                             console.log("Automation completed successfully.");
                         } catch (error) {
                             console.error("Automation encountered an error:", error);
@@ -55,7 +44,6 @@ function createWindow() {
     Menu.setApplicationMenu(menu);
 }
 
-// Start the REST server to receive automation requests
 function startRestServer() {
     console.log("----- Starting REST server -----");
     const server = express();
@@ -63,17 +51,23 @@ function startRestServer() {
 
     server.post('/send-message', async function (req, res) {
         const { message, botUsername, humanUsername } = req.body;
-
+    
         if (!message || !botUsername || !humanUsername) {
             return res.status(400).send("Message, botUsername, and humanUsername are required.");
         }
-
+    
         try {
-            // Set the message text on the clipboard
+            // Clear the clipboard to prevent any stale data
+            clipboard.clear();
+            
+            // Set the message to the clipboard and log it
             clipboard.writeText(message);
             console.log("Clipboard content set to:", clipboard.readText());
-
-            // Start automation script in the renderer
+    
+            // Send message directly to renderer via IPC, bypassing clipboard read
+            win.webContents.send('send-message-to-renderer', message);
+    
+            // Start the automation script
             const response = await automationScript(win, botUsername, humanUsername);
             res.json({ response });
         } catch (error) {
@@ -81,108 +75,28 @@ function startRestServer() {
             res.status(500).send("Failed to retrieve response.");
         }
     });
+    
 
     server.listen(SERVER_PORT, function () {
         console.log(`REST server listening on port ${SERVER_PORT}`);
     });
 }
 
-function automationScript(win, botUsername, humanUsername) {
-    return new Promise(function (resolve) {
-        function automation(HUMAN_USERNAME, BOT_USERNAME) {
-            const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
-            const MESSAGE_ITEM_CLASS = '.messageListItem_d5deea';
-            const MESSAGE_USERNAME_CLASS = '.username_f9f2ca';
-            const MESSAGE_CONTENT_CLASS = '.markup_f8f345';
-            const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
-            const CHECK_INTERVAL = 2000;
-            const processedMessages = {};
+// IPC handlers for clipboard actions in the main process
+ipcMain.handle('clipboard-read', async () => clipboard.readText());
+ipcMain.on('clipboard-write', (event, text) => clipboard.writeText(text));
 
-            async function pasteMessage(messageBox) {
-                messageBox.focus();
-
-                const text = await window.clipboard.readText();
-                
-                const pasteEvent = new ClipboardEvent('paste', {
-                    clipboardData: new DataTransfer(),
-                    bubbles: true,
-                });
-                pasteEvent.clipboardData.setData('text/plain', text);
-                messageBox.dispatchEvent(pasteEvent);
-
-                messageBox.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-
-            async function sendCommand() {
-                const messageBox = document.querySelector(MESSAGE_BOX_SELECTOR);
-                if (messageBox) {
-                    await pasteMessage(messageBox);
-
-                    const enterEvent = new KeyboardEvent('keydown', {
-                        key: 'Enter',
-                        code: 'Enter',
-                        keyCode: 13,
-                        which: 13,
-                        bubbles: true,
-                    });
-                    messageBox.dispatchEvent(enterEvent);
-                } else {
-                    console.error('Message box not found');
-                }
-            }
-
-            function readNewMessages() {
-                const messageContainer = document.querySelector(MESSAGE_CONTAINER_SELECTOR);
-                if (!messageContainer) return;
-
-                const messages = messageContainer.querySelectorAll(MESSAGE_ITEM_CLASS);
-                messages.forEach((message) => {
-                    const messageId = message.getAttribute('id');
-                    if (processedMessages[messageId]) return;
-                    processedMessages[messageId] = true;
-
-                    const sender = message.querySelector(MESSAGE_USERNAME_CLASS)?.innerText || 'Unknown';
-                    const contentElement = message.querySelector(MESSAGE_CONTENT_CLASS);
-                    const content = contentElement ? contentElement.innerText : '';
-
-                    if (sender === BOT_USERNAME && content) {
-                        console.log("Bot response found:", content);
-                        resolve(content); // Resolve with the bot's response
-                    }
-                });
-            }
-
-            sendCommand();
-
-            setInterval(readNewMessages, CHECK_INTERVAL);
-        }
-
-        win.webContents.executeJavaScript(
-            `(${automation})(${JSON.stringify(humanUsername)}, ${JSON.stringify(botUsername)})`
-        );
-    });
-}
-
-
-async function startAutomation(win) {
-    console.log("----- Starting automation -----");
-    const scriptPath = path.join(__dirname, 'automation.js');
-    const automationScript = fs.readFileSync(scriptPath, 'utf8');
-
-    await win.webContents.executeJavaScript(`(${automationScript})(${JSON.stringify(HUMAN_USERNAME)})`);
-}
-
-app.whenReady().then(function () {
+// App Initialization
+app.whenReady().then(() => {
     createWindow();
     startRestServer();
 
-    app.on('activate', function () {
+    app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 });
 
-app.on('window-all-closed', function () {
+app.on('window-all-closed', () => {
     console.log("----- That's all folks! -----");
-    //    if (process.platform !== 'darwin') app.quit();
     app.quit();
 });
