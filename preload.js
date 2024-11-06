@@ -33,7 +33,13 @@ function automationScript() {
     const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
     const MESSAGE_ITEM_SELECTOR = 'li[id^="chat-messages"]';
     const MESSAGE_CONTENT_SELECTOR = 'div[class*="markup"]';
-    const EMBED_CONTENT_SELECTOR = 'div[class*="embedDescription"], div[class*="embedFieldValue"]';
+    const EMBED_SELECTOR = 'article[class*="embedWrapper"]';
+    const EMBED_AUTHOR_NAME_SELECTOR = 'span[class*="embedAuthorName"]'
+    const EMBED_DESCRIPTION_SELECTOR = 'div[class*="embedDescription"]';
+    const EMBED_FIELDS_CONTAINER_SELECTOR = 'div[class*="embedFields"]';
+    const EMBED_FIELD_SELECTOR = ':scope > div[class*="embedField"]';
+    const EMBED_FIELD_NAME_SELECTOR = 'div[class*="embedFieldName"]';
+    const EMBED_FIELD_VALUE_SELECTOR = 'div[class*="embedFieldValue"]';
     const MESSAGE_USERNAME_SELECTOR = 'h3[class^="header"] span[class^="username"]';
     const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
     const CHECK_INTERVAL = 1000; // Check every second
@@ -172,16 +178,46 @@ function automationScript() {
 
                 // If content is empty, check for embeds
                 if (!content) {
-                    console.log("CONTENT IS EMPTY. Checking for embeds...");
                     // Try to extract content from embeds
-                    const embedElements = message.querySelectorAll(EMBED_CONTENT_SELECTOR);
-                    if (embedElements.length > 0) {
-                        console.log("EMBEDS FOUND. Extracting content...");
-
+                    const embed = message.querySelector(EMBED_SELECTOR);
+                    if (embed) {
                         let embedContentArray = [];
-                        embedElements.forEach((embed) => {
-                            embedContentArray.push(embed.innerText.trim());
-                        });
+
+                        // Get embed author name
+                        const authorElement = embed.querySelector(EMBED_AUTHOR_NAME_SELECTOR);
+                        if (authorElement) {
+                            const authorName = authorElement.innerText.trim();
+                            embedContentArray.push(authorName);
+                        }
+
+                        // Get embed description, if any
+                        const descriptionElement = embed.querySelector(EMBED_DESCRIPTION_SELECTOR);
+                        if (descriptionElement) {
+                            const description = descriptionElement.innerText.trim();
+                            embedContentArray.push(description);
+                        }
+
+                        // Get embed fields container
+                        const fieldsContainer = embed.querySelector(EMBED_FIELDS_CONTAINER_SELECTOR);
+                        if (fieldsContainer) {
+                            const fieldElements = fieldsContainer.querySelectorAll(EMBED_FIELD_SELECTOR);
+                            fieldElements.forEach(field => {
+                                const fieldNameElement = field.querySelector(EMBED_FIELD_NAME_SELECTOR);
+                                const fieldValueElement = field.querySelector(EMBED_FIELD_VALUE_SELECTOR);
+                                let fieldName = fieldNameElement ? fieldNameElement.innerText.trim() : '';
+                                let fieldValue = fieldValueElement ? fieldValueElement.innerText.trim() : '';
+
+                                console.log('Processing field:');
+                                console.log('Field Name:', fieldName);
+                                console.log('Field Value:', fieldValue);
+
+                                if (fieldName || fieldValue) {
+                                    embedContentArray.push(`${fieldName}: ${fieldValue}`);
+                                }
+                            });
+                        }
+
+
                         content = embedContentArray.join('\n');
                         console.log('Extracted content from embed:', content);
                     }
