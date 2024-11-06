@@ -93,11 +93,11 @@ function startRestServer() {
         const { message, humanUsername } = req.body;
     
         if (!automationStarted) {
-            return res.status(400).send("Automation not started. Please start automation via the Menu.");
+            return res.status(400).send("[send-message][400] Automation not started. Please start automation via the Menu.");
         }
 
         if (!message || !humanUsername) {
-            return res.status(400).send("Message and humanUsername are required.");
+            return res.status(400).send("[send-message][400] Message and humanUsername are required.");
         }
     
         // Enqueue the message without expecting a bot response
@@ -106,7 +106,7 @@ function startRestServer() {
             res.json({ response });
         } catch (error) {
             console.error("Error sending message:", error);
-            res.status(500).send("Failed to send message: " + error);
+            res.status(500).send("[send-message][500]Failed to send message: " + error);
         }
     });
 
@@ -114,11 +114,11 @@ function startRestServer() {
         const { message, botUsername, humanUsername, commandPrefix = '!' } = req.body;
     
         if (!automationStarted) {
-            return res.status(400).send("Automation not started. Please start automation via the Menu.");
+            return res.status(400).send("[send-command][400] Automation not started. Please start automation via the Menu.");
         }
 
         if (!message || !botUsername || !humanUsername) {
-            return res.status(400).send("Message, botUsername, and humanUsername are required.");
+            return res.status(400).send("[send-command][400] Message, botUsername, and humanUsername are required.");
         }
     
         // Ensure the message starts with the command prefix
@@ -130,7 +130,7 @@ function startRestServer() {
             res.json({ response });
         } catch (error) {
             console.error("Error sending command:", error);
-            res.status(500).send("Failed to send command: " + error);
+            res.status(500).send("[send-command][500] Failed to send command: " + error);
         }
     });
     

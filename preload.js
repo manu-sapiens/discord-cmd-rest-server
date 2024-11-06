@@ -239,7 +239,7 @@ function automationScript() {
                 console.log(`Content: ${content}`);
 
                 if (currentMessage.state === 'waiting_for_echo') {
-                    if ((sender === 'Unknown' || sender === currentMessage.humanUsername) && content === currentMessage.text) {
+                    if ((sender === 'Unknown' || sender === currentMessage.humanUsername) && content === currentMessage.text)) {
                         // User's message echoed back
                         console.log('User message confirmed sent.');
 
@@ -257,7 +257,7 @@ function automationScript() {
                         }
                     } else {
                         // Ignore and mark as read
-                        console.log('[3] Ignoring message while waiting for echo:', content);
+                        console.log('[3] Ignoring message while waiting for echo. Got ', content, " but expected ", currentMessage.text);
                     }
                 } else if (currentMessage.state === 'waiting_for_bot_response') {
                     if (sender === currentMessage.botUsername) {
