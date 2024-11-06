@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Listen for 'start-automation' message from the main process
 ipcRenderer.on('start-automation', () => {
     if (window.automationStarted) {
-        console.log("Automation already started.");
+        console.log("[PRELOAD]Automation already started.");
         return;
     }
     window.automationStarted = true;
@@ -24,7 +24,7 @@ ipcRenderer.on('start-automation', () => {
 });
 
 function automationScript() {
-    console.log("Automation script running in preload script...");
+    console.log("[PRELOAD]Automation script running in preload script...");
 
     // Use ipcRenderer for IPC communication
     const ipc = ipcRenderer;
@@ -53,7 +53,7 @@ function automationScript() {
     function initialize() {
         messageContainer = document.querySelector(MESSAGE_CONTAINER_SELECTOR);
         if (!messageContainer) {
-            console.error('Message container not found. Retrying in 1 second...');
+            console.error('[PRELOAD]Message container not found. Retrying in 1 second...');
             setTimeout(initialize, 1000);
             return;
         }
@@ -75,7 +75,7 @@ function automationScript() {
         console.log('Received message to send:', messageText);
 
         if (currentMessage) {
-            console.error('A message is already being processed.');
+            console.error('[PRELOAD]A message is already being processed.');
             ipc.send('message-response', { messageId, response: 'Another message is currently being processed.' });
             return;
         }
@@ -131,7 +131,7 @@ function automationScript() {
 
             console.log('Message sent:', message.text);
         } else {
-            console.error('Message box not found');
+            console.error('[PRELOAD]Message box not found');
             ipc.send('message-response', { messageId: message.id, response: 'Message box not found' });
             currentMessage = null;
         }
@@ -147,7 +147,7 @@ function automationScript() {
             if (!currentMessage) return;
 
             if (Date.now() - currentMessage.startTime > TIMEOUT) {
-                console.error('Timeout waiting for bot response');
+                console.error('[PRELOAD]Timeout waiting for bot response');
                 ipc.send('message-response', { messageId: currentMessage.id, response: 'Timeout waiting for bot response' });
                 currentMessage = null;
                 return;
@@ -155,6 +155,7 @@ function automationScript() {
 
             const messages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
             console.log(`Found ${messages.length} messages in the chat.`);
+            let last_known_author = "Unknown"
             messages.forEach((message) => {
                 const msgId = message.getAttribute('id') || message.getAttribute('data-list-item-id');
                 if (processedMessages.has(msgId)) {
@@ -163,21 +164,28 @@ function automationScript() {
                 }
                 processedMessages.add(msgId);
 
-                console.log("MESSAGE ID = ", msgId);
-                console.log("FULL MESSAGE = ", message);
-                console.log("EXPECTING BOT RESPONSE = ", currentMessage.expecting_bot_response);
+                console.log("[PRELOAD]MESSAGE ID = ", msgId);
+                console.log("[PRELOAD]FULL MESSAGE = ", message);
+                console.log("[PRELOAD]EXPECTING BOT RESPONSE = ", currentMessage.expecting_bot_response);
 
                 // Try to get the sender's username
                 let senderElement = message.querySelector(MESSAGE_USERNAME_SELECTOR);
-                let sender = senderElement ? senderElement.innerText.trim() : 'Unknown';
-
-                console.log("SENDER = ", sender);
+                let sender = senderElement ? senderElement.innerText : 'Unknown';
+                if (sender === 'Unknown')
+                {
+                    sender = last_known_author;
+                    console.log("[PRELOAD] Unknown sender. Using last known author: ", last_known_author);
+                }
+                else
+                {
+                    last_known_author = sender
+                }
 
                 // Get the message content
                 let contentElement = message.querySelector(MESSAGE_CONTENT_SELECTOR);
                 let content = contentElement ? contentElement.innerText.trim() : '';
 
-                if (content) console.log("CONTENT = ", content);
+                if (content) console.log("[PRELOAD]CONTENT = ", content);
 
                 // If content is empty, check for embeds
                 if (!content) {
@@ -230,7 +238,7 @@ function automationScript() {
                         content = embedContentArray.join('\n');
                         console.log('Extracted content from embed:', content);
                     } else {
-                        console.log("NO EMBEDS FOUND.");
+                        console.log("[PRELOAD]NO EMBEDS FOUND.");
                     }
                 }
 
@@ -239,7 +247,15 @@ function automationScript() {
                 console.log(`Content: ${content}`);
 
                 if (currentMessage.state === 'waiting_for_echo') {
-                    if ((sender === 'Unknown' || sender === currentMessage.humanUsername) && content === currentMessage.text)) {
+                    trimmed_sender = sender.trim().toLowerCase();
+                    trimmed_current_username = currentMessage.humanUsername.trim().toLowerCase();
+                    trimmed_content = content.trim().toLowerCase();
+                    trimmed_current_text = currentMessage.text.trim().toLowerCase();
+                    console.log("[PRELOAD]TRIMMED SENDER = ", trimmed_sender);
+                    console.log("[PRELOAD]TRIMMED CURRENT USERNAME = ", trimmed_current_username);
+                    console.log("[PRELOAD]TRIMMED CONTENT = ", trimmed_content);
+                    console.log("[PRELOAD]TRIMMED CURRENT TEXT = ", trimmed_current_text);
+                    if ((trimmed_sender === 'unknown' || trimmed_sender === trimmed_current_username) && trimmed_content === trimmed_current_text) {
                         // User's message echoed back
                         console.log('User message confirmed sent.');
 

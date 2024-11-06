@@ -22,36 +22,47 @@
     function initialize() {
         messageContainer = document.querySelector(MESSAGE_CONTAINER_SELECTOR);
         if (!messageContainer) {
-            console.error('Message container not found');
+            console.error('[RENDERER] Message container not found');
             setTimeout(initialize, 1000);
             return;
         }
 
         // Mark existing messages as processed
         const existingMessages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
+        let last_known_author = "Unknown";
         existingMessages.forEach((message) => {
             const msgId = message.getAttribute('id');
             processedMessages.add(msgId);
             // display the message content:
             const senderElement = message.querySelector(MESSAGE_USERNAME_CLASS);
-            const sender = senderElement ? senderElement.innerText : 'Unknown';
+            let sender = senderElement ? senderElement.innerText : 'Unknown';
+            if (sender === 'Unknown')
+            {
+                sender = last_known_author;
+                console.log("[RENDERER] Unknown sender. Using last known author: ", last_known_author);
+            }
+            else
+            {
+                last_known_author = sender
+            }
+
             const contentElement = message.querySelector(MESSAGE_CONTENT_CLASS);
             const content = contentElement ? contentElement.innerText : '';
-            console.log('Existing message:', { msgId, sender, content });
+            console.log('[RENDERER] Existing message:', { msgId, sender, content });
             
         });
 
-        console.log('Initialized processed messages with existing messages.');
+        console.log('[RENDERER] Initialized processed messages with existing messages.');
     }
     initialize();
 
     // Listen for messages from main process via IPC
     ipcRenderer.receiveMessageFromMain((messageData) => {
         const { messageId, messageText, botUsername, humanUsername } = messageData;
-        console.log('Received message to send:', messageText);
+        console.log('[RENDERER] Received message to send:', messageText);
 
         if (currentMessage) {
-            console.error('A message is already being processed.');
+            console.error('[RENDERER] A message is already being processed.');
             ipcRenderer.sendResponseToMain(messageId, 'Another message is currently being processed.');
             return;
         }
@@ -104,7 +115,7 @@
             });
             messageBox.dispatchEvent(enterEvent);
         } else {
-            console.error('Message box not found');
+            console.error('[RENDERER] Message box not found');
             ipcRenderer.sendResponseToMain(message.id, 'Message box not found');
             currentMessage = null;
         }
@@ -120,13 +131,13 @@
             console.log("checking messages");
             if (!currentMessage) 
             {
-                console.log("no current message. returning");
+                console.log("[RENDERER] no current message. returning");
                 return;
             }
 
             if (Date.now() - currentMessage.startTime > TIMEOUT) 
             {
-                console.error('Timeout waiting for bot response');
+                console.error('[RENDERER] Timeout waiting for bot response');
                 ipcRenderer.sendResponseToMain(currentMessage.id, 'Timeout waiting for bot response');
                 currentMessage = null;
                 return;
@@ -136,8 +147,10 @@
             console.log("messages: ", messages);
             console.log("# of messages: ", messages.length);
 
+            var counter = 0;
             messages.forEach((message) => 
-                {
+            {
+                    counter++;
                 const msgId = message.getAttribute('id');
                 const senderElement = message.querySelector(MESSAGE_USERNAME_CLASS);
                 const sender = senderElement ? senderElement.innerText : 'Unknown';
@@ -148,35 +161,35 @@
 
                 if (processedMessages.has(msgId)) 
                 {
-                    console.log('Already seen:', { msgId, sender, content });
+                    console.log('Already seen:', { counter, msgId, sender, content });
                     return;
                 }
                 processedMessages.add(msgId);
 
                 current_username = currentMessage.humanUsername;
                 current_text = currentMessage.text;
-                console.log('Current message:', { current_state, current_username, current_text });
+                console.log('[',counter,'] Current message:', { current_state, current_username, current_text });
                 if (currentMessage.state === 'waiting_for_echo') {
                     console.log("waiting for echo of this: ", { current_username,  current_text });
                     if (sender === current_username && content ===current_text) {
                         // User's message echoed back
-                        console.log('User message confirmed sent.');
+                        console.log('[RENDERER] User message confirmed sent.');
                         currentMessage.state = 'waiting_for_bot_response';
                     } else {
                         // Ignore and mark as read
-                        console.log('[1] Ignoring message while waiting for echo:', {content, sender, msgId});
+                        console.log('[RENDERER][1] Ignoring message while waiting for echo:', {content, sender, msgId});
                     }
                 } else if (currentMessage.state === 'waiting_for_bot_response') {
                     if (sender === currentMessage.botUsername) {
                         // Bot's response received
-                        console.log('Bot response received:', content);
+                        console.log('[RENDERER] Bot response received:', content);
 
                         // Send response back to main process
                         ipcRenderer.sendResponseToMain(currentMessage.id, content);
                         currentMessage = null;
                     } else {
                         // Ignore and mark as read
-                        console.log('[2] Ignoring message while waiting for bot response:', content);
+                        console.log('[RENDERER][2] Ignoring message while waiting for bot response:', content);
                     }
                 } else {
                     // Ignore messages

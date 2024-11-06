@@ -26,13 +26,37 @@ Any other input will be sent to the 'send-command' endpoint.
 console.log("Welcome! Type '$help' to list available commands.");
 printHelp();
 
+const handleResponse = (data) => {
+    if (data === null) {
+        console.log('Received a null response from the server.');
+    } else if (typeof data.content === 'string') {
+        if (data.content.trim() === '') {
+            console.log('Received an empty text response from the server.');
+        } else {
+            console.log('Received text content from the server:');
+            console.log(data.content);
+        }
+    } else if (Array.isArray(data.content)) {
+        if (data.content.length === 0) {
+            console.log('Received an empty embed array from the server.');
+        } else {
+            console.log('Received embed content from the server:');
+            data.content.forEach((line, index) => {
+                console.log(`Line ${index + 1}: ${line}`);
+            });
+        }
+    } else {
+        console.log('Unexpected response format:', data);
+    }
+};
+
 const promptUser = () => {
     rl.question('Enter command: ', async (input) => {
         const [command, ...args] = input.trim().split(' ');
         console.log("USERNAME", humanUsername);
         console.log("BOTNAME", botUsername);
-        console.log("COMMAND = ", command);
-        console.log("ARGS = ", args);
+        console.log("COMMAND =", command);
+        console.log("ARGS =", args);
 
         if (command === '$quit') {
             console.log('Exiting...');
@@ -49,7 +73,7 @@ const promptUser = () => {
         } else if (command === '$message') {
             // Send to 'send-message' endpoint
             const message = args.join(' ');
-            console.log("MESSAGE = ", message);
+            console.log("MESSAGE =", message);
             try {
                 const response = await axios.post('http://localhost:3000/send-message', {
                     message,
@@ -58,15 +82,18 @@ const promptUser = () => {
                 });
                 fs.writeFileSync('response.json', JSON.stringify(response.data, null, 2));
                 console.log('Response:', response.data);
+                handleResponse(response.data);
             } catch (error) {
                 console.error('ERROR:', error.message);
-                console.log("ERROR Status: ", error.response.status);
-                console.log("ERROR Data: ", error.response.data);                
+                if (error.response) {
+                    console.log("ERROR Status:", error.response.status);
+                    console.log("ERROR Data:", error.response.data);
+                }
             }
         } else {
             // Send to 'send-command' endpoint with a specific command
-            const message = command+ " " + args.join(' ');
-            console.log("MESSAGE = ", message);
+            const message = `${command} ${args.join(' ')}`.trim();
+            console.log("MESSAGE =", message);
             try {
                 const response = await axios.post('http://localhost:3000/send-command', {
                     message,
@@ -75,10 +102,13 @@ const promptUser = () => {
                 });
                 fs.writeFileSync('response.json', JSON.stringify(response.data, null, 2));
                 console.log('Response:', response.data);
+                handleResponse(response.data);
             } catch (error) {
                 console.error('ERROR:', error.message);
-                console.log("ERROR Status: ", error.response.status);
-                console.log("ERROR Data: ", error.response.data);                
+                if (error.response) {
+                    console.log("ERROR Status:", error.response.status);
+                    console.log("ERROR Data:", error.response.data);
+                }
             }
         }
 
