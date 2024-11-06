@@ -71,7 +71,7 @@ function automationScript() {
 
     // Listen for messages from main process via IPC
     ipc.on('send-message-to-renderer', (event, messageData) => {
-        const { messageId, messageText, botUsername, humanUsername } = messageData;
+        const { messageId, messageText, botUsername, humanUsername, expecting_bot_response } = messageData;
         console.log('Received message to send:', messageText);
 
         if (currentMessage) {
@@ -85,6 +85,7 @@ function automationScript() {
             text: messageText,
             botUsername,
             humanUsername,
+            expecting_bot_response,
             state: 'waiting_for_echo',
             startTime: Date.now(),
         };
@@ -164,6 +165,7 @@ function automationScript() {
 
                 console.log("MESSAGE ID = ", msgId);
                 console.log("FULL MESSAGE = ", message);
+                console.log("EXPECTING BOT RESPONSE = ", currentMessage.expecting_bot_response);
 
                 // Try to get the sender's username
                 let senderElement = message.querySelector(MESSAGE_USERNAME_SELECTOR);
@@ -240,7 +242,19 @@ function automationScript() {
                     if ((sender === 'Unknown' || sender === currentMessage.humanUsername) && content === currentMessage.text) {
                         // User's message echoed back
                         console.log('User message confirmed sent.');
-                        currentMessage.state = 'waiting_for_bot_response';
+
+                        if (currentMessage.expecting_bot_response)
+                        {
+                            console.log('Expecting bot response. Moving to WAITING');
+                            currentMessage.state = 'waiting_for_bot_response';
+                        }
+                        else
+                        {
+                            console.log('NOT expecting bot response. Returning null response.');
+                            // We are done. Sending null response back to main process
+                            ipc.send('message-response', { messageId: currentMessage.id, response: null });
+                            currentMessage = null;
+                        }
                     } else {
                         // Ignore and mark as read
                         console.log('[3] Ignoring message while waiting for echo:', content);

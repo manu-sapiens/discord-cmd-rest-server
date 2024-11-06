@@ -1,5 +1,5 @@
-// main.js
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+//main.js
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const express = require('express');
 const path = require('path');
 
@@ -25,8 +25,6 @@ function createWindow() {
     );
     win.loadURL('https://discord.com/login');
     win.webContents.openDevTools();
-
-    // No need to load the automation script here
 }
 
 function startRestServer() {
@@ -38,13 +36,13 @@ function startRestServer() {
     let isProcessingQueue = false;
     const pendingMessages = new Map();
 
-    function enqueueMessage(win, messageText, botUsername, humanUsername) {
+    function enqueueMessage(win, messageText, botUsername, humanUsername, options = { expectBotResponse: true }) {
         return new Promise((resolve, reject) => {
             const messageId = Date.now() + Math.random(); // Unique ID for the message
-            messageQueue.push({ messageId, messageText, botUsername, humanUsername, resolve, reject });
+            messageQueue.push({ messageId, messageText, botUsername, humanUsername, options, resolve, reject });
             processQueue(win);
         });
-    }
+    }    
 
     function processQueue(win) {
         if (isProcessingQueue || messageQueue.length === 0) {
@@ -53,14 +51,20 @@ function startRestServer() {
 
         isProcessingQueue = true;
 
-        const { messageId, messageText, botUsername, humanUsername, resolve, reject } = messageQueue.shift();
+        const { messageId, messageText, botUsername, humanUsername, options, resolve, reject } = messageQueue.shift();
 
         // Store resolve and reject functions for later use
         pendingMessages.set(messageId, { resolve, reject });
 
+        // if options exists and expectBotResponse exist and expectBotResponse is true
+        const expecting_bot_response = options && options.expectBotResponse && options.expectBotResponse === true;
+        console.log(`Expecting bot response: ${expecting_bot_response}`);
+        pendingMessages.set("expecting_bot_response", expecting_bot_response);
+
         // Send message to renderer
         console.log(`Sending message to renderer: ${messageText}`);
-        win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername });
+        win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername, expecting_bot_response});
+
 
         // Timeout handling
         setTimeout(() => {
@@ -86,27 +90,50 @@ function startRestServer() {
     });
 
     server.post('/send-message', async function (req, res) {
-        const { message, botUsername, humanUsername } = req.body;
-
-        if (!message || !botUsername || !humanUsername) {
-            return res.status(400).send("Message, botUsername, and humanUsername are required.");
-        }
-
+        const { message, humanUsername } = req.body;
+    
         if (!automationStarted) {
             return res.status(400).send("Automation not started. Please start automation via the Menu.");
         }
 
+        if (!message || !humanUsername) {
+            return res.status(400).send("Message and humanUsername are required.");
+        }
+    
+        // Enqueue the message without expecting a bot response
         try {
-            // Enqueue the message and wait for response
-            const response = await enqueueMessage(win, message, botUsername, humanUsername);
-
-            // Return the response to the client
+            const response = await enqueueMessage(win, message, null, humanUsername, { expectBotResponse: false });
             res.json({ response });
         } catch (error) {
-            console.error("Automation error:", error);
-            res.status(500).send("Failed to retrieve response: " + error);
+            console.error("Error sending message:", error);
+            res.status(500).send("Failed to send message: " + error);
         }
     });
+
+    server.post('/send-command', async function (req, res) {
+        const { message, botUsername, humanUsername, commandPrefix = '!' } = req.body;
+    
+        if (!automationStarted) {
+            return res.status(400).send("Automation not started. Please start automation via the Menu.");
+        }
+
+        if (!message || !botUsername || !humanUsername) {
+            return res.status(400).send("Message, botUsername, and humanUsername are required.");
+        }
+    
+        // Ensure the message starts with the command prefix
+        let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
+    
+        // Enqueue the command and expect a bot response
+        try {
+            const response = await enqueueMessage(win, commandMessage, botUsername, humanUsername, { expectBotResponse: true });
+            res.json({ response });
+        } catch (error) {
+            console.error("Error sending command:", error);
+            res.status(500).send("Failed to send command: " + error);
+        }
+    });
+    
 
     server.listen(SERVER_PORT, function () {
         console.log(`REST server listening on port ${SERVER_PORT}`);
@@ -127,6 +154,11 @@ app.whenReady().then(() => {
                     label: 'Start Automation',
                     click: function () {
                         if (automationStarted) {
+                            dialog.showMessageBox({
+                                type: 'info',
+                                title: 'Automation Already Started',
+                                message: 'Automation has already been started.',
+                            });
                             console.log("Automation already started.");
                             return;
                         }
@@ -135,6 +167,11 @@ app.whenReady().then(() => {
                         console.log("Starting automation...");
                         win.webContents.send('start-automation');
                         automationStarted = true;
+                        dialog.showMessageBox({
+                            type: 'info',
+                            title: 'Automation Started',
+                            message: 'Automation script started successfully.',
+                        });
                         console.log("Automation script started in renderer process.");
                     }
                 },
