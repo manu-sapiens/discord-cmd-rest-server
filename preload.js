@@ -34,7 +34,8 @@ function automationScript() {
     const MESSAGE_ITEM_SELECTOR = 'li[id^="chat-messages"]';
     const MESSAGE_CONTENT_SELECTOR = 'div[class*="markup"]';
     const EMBED_SELECTOR = 'article[class*="embedWrapper"]';
-    const EMBED_AUTHOR_NAME_SELECTOR = 'span[class*="embedAuthorName"]'
+    const EMBED_AUTHOR_NAME_SELECTOR = 'span[class*="embedAuthorName"]';
+    const EMBED_TITLE_SELECTOR = 'div[class*="embedTitle"]';
     const EMBED_DESCRIPTION_SELECTOR = 'div[class*="embedDescription"]';
     const EMBED_FIELDS_CONTAINER_SELECTOR = 'div[class*="embedFields"]';
     const EMBED_FIELD_SELECTOR = ':scope > div[class*="embedField"]';
@@ -163,10 +164,10 @@ function automationScript() {
 
                 console.log("MESSAGE ID = ", msgId);
                 console.log("FULL MESSAGE = ", message);
-                
+
                 // Try to get the sender's username
                 let senderElement = message.querySelector(MESSAGE_USERNAME_SELECTOR);
-                let sender = senderElement ? senderElement.innerText : 'Unknown';
+                let sender = senderElement ? senderElement.innerText.trim() : 'Unknown';
 
                 console.log("SENDER = ", sender);
 
@@ -190,14 +191,21 @@ function automationScript() {
                             embedContentArray.push(authorName);
                         }
 
-                        // Get embed description, if any
+                        // Get embed title
+                        const titleElement = embed.querySelector(EMBED_TITLE_SELECTOR);
+                        if (titleElement) {
+                            const titleText = titleElement.innerText.trim();
+                            embedContentArray.push(titleText);
+                        }
+
+                        // Get embed description
                         const descriptionElement = embed.querySelector(EMBED_DESCRIPTION_SELECTOR);
                         if (descriptionElement) {
                             const description = descriptionElement.innerText.trim();
                             embedContentArray.push(description);
                         }
 
-                        // Get embed fields container
+                        // Get embed fields
                         const fieldsContainer = embed.querySelector(EMBED_FIELDS_CONTAINER_SELECTOR);
                         if (fieldsContainer) {
                             const fieldElements = fieldsContainer.querySelectorAll(EMBED_FIELD_SELECTOR);
@@ -217,12 +225,9 @@ function automationScript() {
                             });
                         }
 
-
                         content = embedContentArray.join('\n');
                         console.log('Extracted content from embed:', content);
-                    }
-                    else
-                    {
+                    } else {
                         console.log("NO EMBEDS FOUND.");
                     }
                 }
