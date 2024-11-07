@@ -100,7 +100,7 @@ const promptUser = () => {
                     botUsername,
                     humanUsername
                 });
-                fs.writeFileSync('response.json', JSON.stringify(response.data, null, 2));
+                fs.writeFileSync('.out/response.json', JSON.stringify(response.data, null, 2));
                 console.log('Response:', response.data);
                 handleResponse(response.data);
             } catch (error) {

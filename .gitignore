@@ -1,2 +1,5 @@
 node_modules/
 .env
+all.txt
+out/
+help/
