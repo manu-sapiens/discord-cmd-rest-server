@@ -1,8 +1,9 @@
 //main.js
+const exp = require('constants');
 const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const express = require('express');
 const path = require('path');
-
+const POST_RESOLVE_TIMEOUT = 60000; // 60 seconds
 let win;
 const SERVER_PORT = 3000;
 let automationStarted = false;
@@ -36,12 +37,16 @@ function startRestServer() {
     let isProcessingQueue = false;
     const pendingMessages = new Map();
 
-    function enqueueMessage(win, messageText, botUsername, humanUsername, options = { expectBotResponse: true }) {
-        return new Promise((resolve, reject) => {
+    function enqueueMessage(win, messageText, botUsername, humanUsername, options = { expectBotResponse: true, expectEcho: false }) 
+    {
+        console.log("Enqueueing message:", { messageText, botUsername, humanUsername, options });
+
+        let p = new Promise((resolve, reject) => {
             const messageId = Date.now() + Math.random(); // Unique ID for the message
             messageQueue.push({ messageId, messageText, botUsername, humanUsername, options, resolve, reject });
             processQueue(win);
         });
+        return p
     }    
 
     function processQueue(win) {
@@ -56,14 +61,10 @@ function startRestServer() {
         // Store resolve and reject functions for later use
         pendingMessages.set(messageId, { resolve, reject });
 
-        // if options exists and expectBotResponse exist and expectBotResponse is true
-        const expecting_bot_response = options && options.expectBotResponse && options.expectBotResponse === true;
-        console.log(`Expecting bot response: ${expecting_bot_response}`);
-        pendingMessages.set("expecting_bot_response", expecting_bot_response);
 
         // Send message to renderer
         console.log(`Sending message to renderer: ${messageText}`);
-        win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername, expecting_bot_response});
+        win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername, options});
 
 
         // Timeout handling
@@ -74,7 +75,7 @@ function startRestServer() {
                 isProcessingQueue = false;
                 processQueue(win); // Process next message in the queue
             }
-        }, 60000); // 60 seconds timeout
+        }, POST_RESOLVE_TIMEOUT); // 60 seconds timeout
     }
 
     // IPC handler for message responses from renderer
@@ -102,7 +103,7 @@ function startRestServer() {
     
         // Enqueue the message without expecting a bot response
         try {
-            const response = await enqueueMessage(win, message, null, humanUsername, { expectBotResponse: false });
+            const response = await enqueueMessage(win, message, null, humanUsername, { expectBotResponse: false, expectEcho: true });
             res.json({ response });
         } catch (error) {
             console.error("Error sending message:", error);
@@ -126,7 +127,7 @@ function startRestServer() {
     
         // Enqueue the command and expect a bot response
         try {
-            const response = await enqueueMessage(win, commandMessage, botUsername, humanUsername, { expectBotResponse: true });
+            const response = await enqueueMessage(win, commandMessage, botUsername, humanUsername, { expectBotResponse: true, expectEcho: false  });
             res.json({ response });
         } catch (error) {
             console.error("Error sending command:", error);

@@ -53,27 +53,31 @@ const handleResponse = (data) => {
 const promptUser = () => {
     rl.question('Enter command: ', async (input) => {
         const [command, ...args] = input.trim().split(' ');
-        console.log("USERNAME", humanUsername);
-        console.log("BOTNAME", botUsername);
-        console.log("COMMAND =", command);
-        console.log("ARGS =", args);
 
+        console.log("[You entered] COMMAND =", command);
+        console.log("[You entered] ARGS =", args);
+
+        
         if (command === '$quit') {
             console.log('Exiting...');
             rl.close();
             return;
-        } else if (command === '$help') {
+        } else if (command === '$status') {
+        console.log("[STATUS] USERNAME", humanUsername);
+        console.log("[STATUS] BOTNAME", botUsername);
+        } 
+        else if (command === '$help') {
             printHelp();
         } else if (command === '$botname') {
             botUsername = args.join(' ');
-            console.log(`Bot name changed to: ${botUsername}`);
+            console.log(`[LOCAL] Bot name changed to: ${botUsername}`);
         } else if (command === '$username') {
             humanUsername = args.join(' ');
-            console.log(`Username changed to: ${humanUsername}`);
+            console.log(`[LOCAL] Username changed to: ${humanUsername}`);
         } else if (command === '$message') {
             // Send to 'send-message' endpoint
             const message = args.join(' ');
-            console.log("MESSAGE =", message);
+            console.log("[SENDING] MESSAGE =", message);
             try {
                 const response = await axios.post('http://localhost:3000/send-message', {
                     message,
@@ -100,7 +104,7 @@ const promptUser = () => {
                     botUsername,
                     humanUsername
                 });
-                fs.writeFileSync('.out/response.json', JSON.stringify(response.data, null, 2));
+                fs.writeFileSync('./out/response.json', JSON.stringify(response.data, null, 2));
                 console.log('Response:', response.data);
                 handleResponse(response.data);
             } catch (error) {
