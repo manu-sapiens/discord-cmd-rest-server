@@ -98,7 +98,7 @@ function startRestServer() {
         }
 
         if (!message || !humanUsername) {
-            return res.status(400).send("[send-message][400] Message and humanUsername are required.");
+            return res.status(400).send("[send-message][400] Message and humanUsername are required. We have received: " + JSON.stringify(req.body)+ " with message = ["+message+"] and humanUsername = ["+humanUsername+"]");
         }
     
         // Enqueue the message without expecting a bot response

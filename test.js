@@ -26,100 +26,161 @@ Any other input will be sent to the 'send-command' endpoint.
 console.log("Welcome! Type '$help' to list available commands.");
 printHelp();
 
-const handleResponse = (data) => {
-    if (data === null) {
-        console.log('Received a null response from the server.');
-    } else if (typeof data.content === 'string') {
-        if (data.content.trim() === '') {
-            console.log('Received an empty text response from the server.');
-        } else {
-            console.log('Received text content from the server:');
-            console.log(data.content);
-        }
-    } else if (Array.isArray(data.content)) {
-        if (data.content.length === 0) {
-            console.log('Received an empty embed array from the server.');
-        } else {
-            console.log('Received embed content from the server:');
-            data.content.forEach((line, index) => {
-                console.log(`Line ${index + 1}: ${line}`);
-            });
-        }
-    } else {
-        console.log('Unexpected response format:', data);
+function handleResponse(data) 
+{
+    const contents = data?.response?.contents;
+    const error = data?.response?.error;
+    if (error)
+    {
+        console.error('Received an error response from the server:', error);
     }
-};
+    
+    if (!contents) 
+    {
+        console.warn("Unexpected empty response contents:", data);
+        return;
+    }
 
-const promptUser = () => {
+    let data_list = contents;
+    
+    // if it is not a list, make one
+    if (!Array.isArray(data_list))
+    {
+        console.warn('Received a non-list response from the server. Wrapping in a list.');
+        console.log('Data:', data);
+        console.log('Data.response:', data.response)
+        console.log('Data.response.contents:', data.response.contents);
+        
+        data_list = [data_list];
+    }
+
+    if (data_list.length === 0) 
+    {
+        console.log('Received an empty response from the server. This is probably expected');
+        return;
+    }
+
+    let got_good_response = false;
+    data_list.forEach((entry, index) => 
+    {
+        const sender = entry.sender;
+        console.log(`Response #[${index + 1}], from ${sender}:`);
+        if (entry.text) 
+        {
+            console.log('Text: [', entry.text,"]");
+            got_good_response = true;
+        }
+        const embed = entry.embed;
+        if (embed) 
+        {
+            got_good_response = true;
+
+            console.log("---- Embed ----");
+            if (!Array.isArray(embed)) 
+            {
+                console.log("| ", embed);
+            }
+            else embed.forEach((line, index) =>
+            {
+                console.log(`| Line ${index + 1}: ${line}`);
+            });
+            console.log("------------");
+        }
+    });
+
+    if (!got_good_response)
+    {
+        console.error('Unexpected response format:', data);
+    }
+
+    return;
+}
+
+function promptUser()
+{
     rl.question('Enter command: ', async (input) => {
         const [command, ...args] = input.trim().split(' ');
 
         console.log("[You entered] COMMAND =", command);
         console.log("[You entered] ARGS =", args);
+        let message = '';
 
-        
-        if (command === '$quit') {
-            console.log('Exiting...');
-            rl.close();
-            return;
-        } else if (command === '$status') {
-        console.log("[STATUS] USERNAME", humanUsername);
-        console.log("[STATUS] BOTNAME", botUsername);
-        } 
-        else if (command === '$help') {
-            printHelp();
-        } else if (command === '$botname') {
-            botUsername = args.join(' ');
-            console.log(`[LOCAL] Bot name changed to: ${botUsername}`);
-        } else if (command === '$username') {
-            humanUsername = args.join(' ');
-            console.log(`[LOCAL] Username changed to: ${humanUsername}`);
-        } else if (command === '$message') {
-            // Send to 'send-message' endpoint
-            const message = args.join(' ');
-            console.log("[SENDING] MESSAGE =", message);
-            try {
-                const response = await axios.post('http://localhost:3000/send-message', {
-                    message,
-                    botUsername,
-                    humanUsername
-                });
-                fs.writeFileSync('response.json', JSON.stringify(response.data, null, 2));
-                console.log('Response:', response.data);
-                handleResponse(response.data);
-            } catch (error) {
-                console.error('ERROR:', error.message);
-                if (error.response) {
-                    console.log("ERROR Status:", error.response.status);
-                    console.log("ERROR Data:", error.response.data);
+        switch (command) {
+
+            case '$quit':
+                console.log('Exiting...');
+                rl.close();
+                return;
+
+            case '$status':
+                console.log("[STATUS] USERNAME", humanUsername);
+                console.log("[STATUS] BOTNAME", botUsername);
+                break;
+
+            case '$help':
+                printHelp();
+                break;
+
+            case '$botname':
+                botUsername = args.join(' ');
+                console.log(`[LOCAL] Bot name changed to: ${botUsername}`);
+                break;
+
+            case '$username':
+                humanUsername = args.join(' ');
+                console.log(`[LOCAL] Username changed to: ${humanUsername}`);
+                break;
+
+            case '$message':
+                // Send to 'send-message' endpoint, removing the '$message' command from it
+                message = args.join(' ');
+                console.log("[SENDING] MESSAGE =[", message, "] TO =[", botUsername, "] FROM =[", humanUsername,"]");
+                try {
+                    const response = await axios.post('http://localhost:3000/send-message', {
+                        message,
+                        botUsername,
+                        humanUsername
+                    });
+                    fs.writeFileSync('response.json', JSON.stringify(response.data, null, 2));
+                    console.log('Response:', response.data);
+                    handleResponse(response.data);
+                } catch (error) {
+                    console.error('ERROR:', error.message);
+                    if (error.response) {
+                        console.log("ERROR Status:", error.response.status);
+                        console.log("ERROR Data:", error.response.data);
+                    }
                 }
-            }
-        } else {
-            // Send to 'send-command' endpoint with a specific command
-            const message = `${command} ${args.join(' ')}`.trim();
-            console.log("MESSAGE =", message);
-            try {
-                const response = await axios.post('http://localhost:3000/send-command', {
-                    message,
-                    botUsername,
-                    humanUsername
-                });
-                fs.writeFileSync('./out/response.json', JSON.stringify(response.data, null, 2));
-                console.log('Response:', response.data);
-                handleResponse(response.data);
-            } catch (error) {
-                console.error('ERROR:', error.message);
-                if (error.response) {
-                    console.log("ERROR Status:", error.response.status);
-                    console.log("ERROR Data:", error.response.data);
+                break;
+
+            default:
+                // Send to 'send-command' endpoint with a specific command
+                message = `${command} ${args.join(' ')}`.trim();
+                console.log("[SENDING] COMMAND =[", message, "] TO =[", botUsername, "] FROM =[", humanUsername,"]");
+                try {
+                    const response = await axios.post('http://localhost:3000/send-command', {
+                        message,
+                        botUsername,
+                        humanUsername
+                    });
+                    fs.writeFileSync('./out/response.json', JSON.stringify(response.data, null, 2));
+                    console.log('Response:', response.data);
+                    handleResponse(response.data);
+                } catch (error) {
+                    console.error('ERROR:', error.message);
+                    if (error.response) {
+                        console.log("ERROR Status:", error.response.status);
+                        console.log("ERROR Data:", error.response.data);
+                    }
                 }
-            }
+                break;
         }
+
 
         // Prompt for the next command
         promptUser();
     });
-};
+}
 
 // Start prompting the user
 promptUser();

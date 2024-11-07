@@ -19,8 +19,8 @@ const MESSAGE_USERNAME_SELECTOR = 'h3[class^="header"] span[class^="username"]';
 const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
 
 const TIMEOUT_POST_RESPONSE = 20000; // 60 seconds timeout
-const MESSAGE_CHECK_INTERVAL = 100; // Check every second
-const TIMEOUT_ACCUMULATION = 10000; // 10 seconds timeout for accumulating without echo
+const MESSAGE_CHECK_INTERVAL = 100; // Check every 1/10 second
+const TIMEOUT_ACCUMULATION = 2000; // 2 seconds timeout for accumulating without echo
 
 // Function to log messages to the console, takes the same arguments as console.log including things like "this", var, "then", other var
 function console_log(message, ...optionalParams)
@@ -62,6 +62,7 @@ function automationScript()
     let messageContainer;
     let accumulatedResponses = [];
     let last_known_author = "Unknown";
+    // let received_real_answer = false;
 
     // Initialize message container and processed messages
     function initialize() {
@@ -199,8 +200,12 @@ function automationScript()
             const elapsedTime = Date.now() - currentMessage.startTime;
             // console.log(`[PRELOAD] Checking messages for ${elapsedTime} ms...`);
 
-            if (currentMessage && currentMessage.state === STATE_FIRST_WAIT_FOR_ACCUMULATION) {
-                if (elapsedTime >= TIMEOUT_ACCUMULATION) {
+            if (currentMessage && currentMessage.state === STATE_FIRST_WAIT_FOR_ACCUMULATION) 
+            {
+                // accumulation timeout only start after receiving at least 1 real answer
+                //if (received_real_answer && elapsedTime >= TIMEOUT_ACCUMULATION) 
+                if (accumulatedResponses.length > 0 && elapsedTime >= TIMEOUT_ACCUMULATION)
+                {
                     const contents = accumulatedResponses;
                     const error = null;
                     const response = {contents, error};
@@ -210,14 +215,16 @@ function automationScript()
                     accumulatedResponses = [];
                     currentMessage = null;
                 }
+
             }
 
-            // if (elapsedTime > TIMEOUT_POST_RESPONSE) {
-            //     console.error('[PRELOAD]Timeout waiting for bot response');
-            //     ipc.send('message-response', { messageId: currentMessage.id, response: 'Timeout waiting for bot response' });
-            //     currentMessage = null;
-            //     return;
-            // }
+            if (elapsedTime > TIMEOUT_POST_RESPONSE) 
+            {
+                console.error('[PRELOAD]Timeout waiting for bot response');
+                //ipc.send('message-response', { messageId: currentMessage.id, response: 'Timeout waiting for bot response' });
+                //currentMessage = null;
+                return;
+            }
 
             const messages = document.querySelectorAll(MESSAGE_ITEM_SELECTOR);
             console.log(`Found ${messages.length} messages in the chat.`);
@@ -302,21 +309,16 @@ function automationScript()
                     embed = embedContentArray.join('\n');
                 }
             
-                const content = { text, embed };
+                const content = { text, embed, sender };
+                const trimmed_sender = sender.trim().toLowerCase();
+                const trimmed_expected_humanUsername = currentMessage.humanUsername.trim().toLowerCase();
+                // for content, we need to trim out all non-alphanumeric characters and convert to lowercase
+                const trimmed_text = text.replace(/[^a-zA-Z0-9]/g, '').trim().toLowerCase();
+                const trimmed_expected_text = currentMessage.text.replace(/[^a-zA-Z0-9]/g, '').trim().toLowerCase();
 
                 switch (currentMessage.state) {
                     case STATE_FIRST_WAIT_FOR_ECHO:
                     {
-
-                        const trimmed_sender = sender.trim().toLowerCase();
-                        const trimmed_expected_humanUsername = currentMessage.humanUsername.trim().toLowerCase();
-
-                        // for content, we need to trim out all non-alphanumeric characters and convert to lowercase
-                        
-                        // first remove all non alphanumeric characters
-                        const trimmed_text = text.replace(/[^a-zA-Z0-9]/g, '').trim().toLowerCase();
-                        const trimmed_expected_text = currentMessage.text.replace(/[^a-zA-Z0-9]/g, '').trim().toLowerCase();
-
                         if (trimmed_sender !== trimmed_expected_humanUsername)
                         {
                             console.log('Sender {',trimmed_sender,'} does not match expected human username {,',trimmed_expected_humanUsername,'}');
@@ -367,23 +369,29 @@ function automationScript()
                         else 
                         {
                             // Ignore and mark as read
-                            console.log('[4] Ignoring message while waiting for bot response:', text);
+                            console.log('[4] Ignoring message while waiting for bot response:', text, embed, sender);
                         }
                         break;
                     } 
                     case STATE_FIRST_WAIT_FOR_ACCUMULATION:
                     {
-                        if (sender === currentMessage.botUsername) 
+                        // console.log('Accumulating bot response:', content);
+                        // accumulatedResponses.push(content);
+                        // console.log('Accumulated responses size:', accumulatedResponses.length);   
+                        
+                        // if (received_real_answer == false)
+                        // {
+                        //     if (trimmed_sender !== trimmed_expected_humanUsername) received_real_answer = true;
+                        //     else if (trimmed_text !== trimmed_expected_text) received_real_answer = true;
+                        // }
+
+                        if (embed != null || trimmed_sender !== trimmed_expected_humanUsername || trimmed_text !== trimmed_expected_text) 
                         {
                             console.log('Accumulating bot response:', content);
                             accumulatedResponses.push(content);
-                            console.log('Accumulated responses size:', accumulatedResponses.length);    
-                        } 
-                        else 
-                        {
-                            // Ignore and mark as read
-                            console.log('[5] Ignoring NON-BOT message while accumulating without echo:', text);
+                            console.log('Accumulated responses size:', accumulatedResponses.length);   
                         }
+
                         break;
                     }
 
@@ -391,7 +399,7 @@ function automationScript()
                     {
                         // Ignore messages
                         console.error('[PRELOAD] Unknown state:', currentMessage.state);
-                        console.log('[PRELOAD] Ignoring message:', text);
+                        console.log('[PRELOAD] Ignoring message:', text, embed);
                     }
                 }                       
             });
