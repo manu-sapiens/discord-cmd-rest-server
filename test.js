@@ -8,6 +8,12 @@ const rl = readline.createInterface({
     output: process.stdout,
 });
 
+const DISCORD_AUTOMATION_SERVER_PORT = 3038;
+const DISCORD_AUTOMATION_URL = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}`
+const DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT = `${DISCORD_AUTOMATION_URL}/send-command`;
+console.log("DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT =", DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT);
+const DISCORD_AUTOMATION_SEND_MESSAGE_ENDPOINT = `${DISCORD_AUTOMATION_URL}/send-message`;
+console.log("DISCORD_AUTOMATION_SEND_MESSAGE_ENDPOINT =", DISCORD_AUTOMATION_SEND_MESSAGE_ENDPOINT);
 let botUsername = 'Avrae';
 let humanUsername = 'manu_mercs';
 
@@ -61,28 +67,31 @@ function handleResponse(data)
     }
 
     let got_good_response = false;
+    let counter = 0;
+
     data_list.forEach((entry, index) => 
     {
+        counter++;
         const sender = entry.sender;
-        console.log(`Response #[${index + 1}], from ${sender}:`);
+        // console.log(`Response #[${index + 1}], from ${sender}:`);
         if (entry.text) 
         {
-            console.log('Text: [', entry.text,"]");
+            console.log(`---- Text [${counter}] ----`);
+            console.log(entry.text);
             got_good_response = true;
         }
         const embed = entry.embed;
         if (embed) 
         {
             got_good_response = true;
-
-            console.log("---- Embed ----");
+            console.log(`---- Embed [${counter}] ----`);
             if (!Array.isArray(embed)) 
             {
-                console.log("| ", embed);
+                console.log(embed);
             }
             else embed.forEach((line, index) =>
             {
-                console.log(`| Line ${index + 1}: ${line}`);
+                console.log(`[${counter}][${index + 1}]: ${line}`);
             });
             console.log("------------");
         }
@@ -136,7 +145,7 @@ function promptUser()
                 message = args.join(' ');
                 console.log("[SENDING] MESSAGE =[", message, "] TO =[", botUsername, "] FROM =[", humanUsername,"]");
                 try {
-                    const response = await axios.post('http://localhost:3000/send-message', {
+                    const response = await axios.post(DISCORD_AUTOMATION_SEND_MESSAGE_ENDPOINT, {
                         message,
                         botUsername,
                         humanUsername
@@ -158,7 +167,7 @@ function promptUser()
                 message = `${command} ${args.join(' ')}`.trim();
                 console.log("[SENDING] COMMAND =[", message, "] TO =[", botUsername, "] FROM =[", humanUsername,"]");
                 try {
-                    const response = await axios.post('http://localhost:3000/send-command', {
+                    const response = await axios.post(DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT, {
                         message,
                         botUsername,
                         humanUsername

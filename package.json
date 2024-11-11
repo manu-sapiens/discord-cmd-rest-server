@@ -15,5 +15,8 @@
     "electron": "^33.0.2",
     "express": "^4.21.1",
     "readline": "^1.3.0"
+  },
+  "build": {
+    "icon": "assets/gen_ai"
   }
 }

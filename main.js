@@ -5,13 +5,14 @@ const express = require('express');
 const path = require('path');
 const POST_RESOLVE_TIMEOUT = 60000; // 60 seconds
 let win;
-const SERVER_PORT = 3000;
+const DISCORD_AUTOMATION_SERVER_PORT = 3038;
 let automationStarted = false;
 
 function createWindow() {
     win = new BrowserWindow({
         width: 1200,
         height: 800,
+        icon: path.join(__dirname, 'assets', 'gen_ai.icns'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'), // Load the preload script
             nodeIntegration: false, // Disable nodeIntegration for security
@@ -20,6 +21,8 @@ function createWindow() {
             experimentalFeatures: true,
         },
     });
+
+    // win.webContents.audioMuted = true;
 
     win.webContents.setUserAgent(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36"
@@ -136,8 +139,8 @@ function startRestServer() {
     });
     
 
-    server.listen(SERVER_PORT, function () {
-        console.log(`REST server listening on port ${SERVER_PORT}`);
+    server.listen(DISCORD_AUTOMATION_SERVER_PORT, function () {
+        console.log(`REST server listening on port ${DISCORD_AUTOMATION_SERVER_PORT}`);
     });
 }
 
