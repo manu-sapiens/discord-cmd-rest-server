@@ -1,12 +1,38 @@
 //main.js
-const exp = require('constants');
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
-const express = require('express');
+// --------------------------------
 const path = require('path');
-const POST_RESOLVE_TIMEOUT = 60000; // 60 seconds
+const bodyParser = require('body-parser');
+const express = require('express');
+const { app, BrowserWindow, Menu, dialog } = require('electron');
+// --------------------------------
+const roomRoute = require('./routes/places/room');
+const modificationRoute = require('./routes/places/modifications');
+const dungeonRoute = require('./routes/places/dungeon');
+const messageRoute = require('./routes/discord/message');
+const commandRoute = require('./routes/discord/command'); 
+const healthRoute = require('./routes/health');
+const { initializeQueueProcessor } = require('./utils/queueProcessor'); 
+const { setAutomationStarted, getAutomationStarted, setMainWindow } = require('./state');
+// --------------------------------
+
+const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
+
 let win;
-const DISCORD_AUTOMATION_SERVER_PORT = 3038;
-let automationStarted = false;
+const server = express();
+
+server.use(bodyParser.json());
+
+// Register routes
+server.use('/places/rooms', roomRoute);
+server.use('/places/modifications', modificationRoute);
+server.use('/places/dungeon', dungeonRoute);
+server.use('/health', healthRoute);
+server.use('/discord/send-message', messageRoute);
+server.use('/discord/send-command', commandRoute);
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 function createWindow() {
     win = new BrowserWindow({
@@ -22,6 +48,10 @@ function createWindow() {
         },
     });
 
+    setMainWindow(win);
+    // Initialize queue processor for handling message queue logic
+    initializeQueueProcessor();
+
     // win.webContents.audioMuted = true;
 
     win.webContents.setUserAgent(
@@ -31,123 +61,123 @@ function createWindow() {
     win.webContents.openDevTools();
 }
 
-function startRestServer() {
-    console.log("----- Starting REST server -----");
-    const server = express();
-    server.use(express.json());
+// function startRestServer() {
+//     console.log("----- Starting REST server -----");
+//     const server = express();
+//     server.use(express.json());
 
-    const messageQueue = [];
-    let isProcessingQueue = false;
-    const pendingMessages = new Map();
+//     const messageQueue = [];
+//     let isProcessingQueue = false;
+//     const pendingMessages = new Map();
 
-    function enqueueMessage(win, messageText, botUsername, humanUsername, options = { expectBotResponse: true, expectEcho: false }) 
-    {
-        console.log("Enqueueing message:", { messageText, botUsername, humanUsername, options });
+//     function enqueueMessage(win, messageText, botUsername, humanUsername, options = { expectBotResponse: true, expectEcho: false }) 
+//     {
+//         console.log("Enqueueing message:", { messageText, botUsername, humanUsername, options });
 
-        let p = new Promise((resolve, reject) => {
-            const messageId = Date.now() + Math.random(); // Unique ID for the message
-            messageQueue.push({ messageId, messageText, botUsername, humanUsername, options, resolve, reject });
-            processQueue(win);
-        });
-        return p
-    }    
+//         let p = new Promise((resolve, reject) => {
+//             const messageId = Date.now() + Math.random(); // Unique ID for the message
+//             messageQueue.push({ messageId, messageText, botUsername, humanUsername, options, resolve, reject });
+//             processQueue(win);
+//         });
+//         return p
+//     }    
 
-    function processQueue(win) {
-        if (isProcessingQueue || messageQueue.length === 0) {
-            return;
-        }
+//     function processQueue(win) {
+//         if (isProcessingQueue || messageQueue.length === 0) {
+//             return;
+//         }
 
-        isProcessingQueue = true;
+//         isProcessingQueue = true;
 
-        const { messageId, messageText, botUsername, humanUsername, options, resolve, reject } = messageQueue.shift();
+//         const { messageId, messageText, botUsername, humanUsername, options, resolve, reject } = messageQueue.shift();
 
-        // Store resolve and reject functions for later use
-        pendingMessages.set(messageId, { resolve, reject });
-
-
-        // Send message to renderer
-        console.log(`Sending message to renderer: ${messageText}`);
-        win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername, options});
+//         // Store resolve and reject functions for later use
+//         pendingMessages.set(messageId, { resolve, reject });
 
 
-        // Timeout handling
-        setTimeout(() => {
-            if (pendingMessages.has(messageId)) {
-                pendingMessages.get(messageId).reject('Timeout waiting for bot response');
-                pendingMessages.delete(messageId);
-                isProcessingQueue = false;
-                processQueue(win); // Process next message in the queue
-            }
-        }, POST_RESOLVE_TIMEOUT); // 60 seconds timeout
-    }
+//         // Send message to renderer
+//         console.log(`Sending message to renderer: ${messageText}`);
+//         win.webContents.send('send-message-to-renderer', { messageId, messageText, botUsername, humanUsername, options});
 
-    // IPC handler for message responses from renderer
-    ipcMain.on('message-response', (event, { messageId, response }) => {
-        console.log(`Received response for messageId ${messageId}: ${response}`);
-        if (pendingMessages.has(messageId)) {
-            const { resolve } = pendingMessages.get(messageId);
-            resolve(response);
-            pendingMessages.delete(messageId);
-        }
-        isProcessingQueue = false;
-        processQueue(win); // Process next message in the queue
-    });
 
-    server.post('/send-message', async function (req, res) {
-        const { message, humanUsername } = req.body;
+//         // Timeout handling
+//         setTimeout(() => {
+//             if (pendingMessages.has(messageId)) {
+//                 pendingMessages.get(messageId).reject('Timeout waiting for bot response');
+//                 pendingMessages.delete(messageId);
+//                 isProcessingQueue = false;
+//                 processQueue(win); // Process next message in the queue
+//             }
+//         }, POST_RESOLVE_TIMEOUT); // 60 seconds timeout
+//     }
+
+//     // IPC handler for message responses from renderer
+//     ipcMain.on('message-response', (event, { messageId, response }) => {
+//         console.log(`Received response for messageId ${messageId}: ${response}`);
+//         if (pendingMessages.has(messageId)) {
+//             const { resolve } = pendingMessages.get(messageId);
+//             resolve(response);
+//             pendingMessages.delete(messageId);
+//         }
+//         isProcessingQueue = false;
+//         processQueue(win); // Process next message in the queue
+//     });
+
+//     server.post('/send-message', async function (req, res) {
+//         const { message, humanUsername } = req.body;
     
-        if (!automationStarted) {
-            return res.status(400).send("[send-message][400] Automation not started. Please start automation via the Menu.");
-        }
+//         if (!automationStarted) {
+//             return res.status(400).send("[send-message][400] Automation not started. Please start automation via the Menu.");
+//         }
 
-        if (!message || !humanUsername) {
-            return res.status(400).send("[send-message][400] Message and humanUsername are required. We have received: " + JSON.stringify(req.body)+ " with message = ["+message+"] and humanUsername = ["+humanUsername+"]");
-        }
+//         if (!message || !humanUsername) {
+//             return res.status(400).send("[send-message][400] Message and humanUsername are required. We have received: " + JSON.stringify(req.body)+ " with message = ["+message+"] and humanUsername = ["+humanUsername+"]");
+//         }
     
-        // Enqueue the message without expecting a bot response
-        try {
-            const response = await enqueueMessage(win, message, null, humanUsername, { expectBotResponse: false, expectEcho: true });
-            res.json({ response });
-        } catch (error) {
-            console.error("Error sending message:", error);
-            res.status(500).send("[send-message][500]Failed to send message: " + error);
-        }
-    });
+//         // Enqueue the message without expecting a bot response
+//         try {
+//             const response = await enqueueMessage(win, message, null, humanUsername, { expectBotResponse: false, expectEcho: true });
+//             res.json({ response });
+//         } catch (error) {
+//             console.error("Error sending message:", error);
+//             res.status(500).send("[send-message][500]Failed to send message: " + error);
+//         }
+//     });
 
-    server.post('/send-command', async function (req, res) {
-        const { message, botUsername, humanUsername, commandPrefix = '!' } = req.body;
+//     server.post('/send-command', async function (req, res) {
+//         const { message, botUsername, humanUsername, commandPrefix = '!' } = req.body;
     
-        if (!automationStarted) {
-            return res.status(400).send("[send-command][400] Automation not started. Please start automation via the Menu.");
-        }
+//         if (!automationStarted) {
+//             return res.status(400).send("[send-command][400] Automation not started. Please start automation via the Menu.");
+//         }
 
-        if (!message || !botUsername || !humanUsername) {
-            return res.status(400).send("[send-command][400] Message, botUsername, and humanUsername are required.");
-        }
+//         if (!message || !botUsername || !humanUsername) {
+//             return res.status(400).send("[send-command][400] Message, botUsername, and humanUsername are required.");
+//         }
     
-        // Ensure the message starts with the command prefix
-        let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
+//         // Ensure the message starts with the command prefix
+//         let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
     
-        // Enqueue the command and expect a bot response
-        try {
-            const response = await enqueueMessage(win, commandMessage, botUsername, humanUsername, { expectBotResponse: true, expectEcho: false  });
-            res.json({ response });
-        } catch (error) {
-            console.error("Error sending command:", error);
-            res.status(500).send("[send-command][500] Failed to send command: " + error);
-        }
-    });
+//         // Enqueue the command and expect a bot response
+//         try {
+//             const response = await enqueueMessage(win, commandMessage, botUsername, humanUsername, { expectBotResponse: true, expectEcho: false  });
+//             res.json({ response });
+//         } catch (error) {
+//             console.error("Error sending command:", error);
+//             res.status(500).send("[send-command][500] Failed to send command: " + error);
+//         }
+//     });
     
 
-    server.listen(DISCORD_AUTOMATION_SERVER_PORT, function () {
-        console.log(`REST server listening on port ${DISCORD_AUTOMATION_SERVER_PORT}`);
-    });
-}
+//     server.listen(DISCORD_AUTOMATION_SERVER_PORT, function () {
+//         console.log(`REST server listening on port ${DISCORD_AUTOMATION_SERVER_PORT}`);
+//     });
+// }
 
 // App Initialization
 app.whenReady().then(() => {
     createWindow();
-    startRestServer();
+    //startRestServer();
 
     // Create the menu after the window is ready
     const menu = Menu.buildFromTemplate([
@@ -157,7 +187,7 @@ app.whenReady().then(() => {
                 {
                     label: 'Start Automation',
                     click: function () {
-                        if (automationStarted) {
+                        if (getAutomationStarted()) {
                             dialog.showMessageBox({
                                 type: 'info',
                                 title: 'Automation Already Started',
@@ -170,7 +200,7 @@ app.whenReady().then(() => {
                         // Send message to renderer to start automation
                         console.log("Starting automation...");
                         win.webContents.send('start-automation');
-                        automationStarted = true;
+                        setAutomationStarted(true);
                         dialog.showMessageBox({
                             type: 'info',
                             title: 'Automation Started',

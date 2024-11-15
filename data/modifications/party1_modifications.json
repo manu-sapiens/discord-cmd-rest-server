@@ -1,0 +1,13 @@
+[
+  {
+    "modification_id": "b811c597-cfa2-424f-8b02-19ad80638a66",
+    "party_id": "party1",
+    "timestamp": "2024-11-08T08:46:40.717Z",
+    "previous_hash": "0",
+    "action": "secret_door_revealed",
+    "details": {
+      "secret_door_id": "secret1"
+    },
+    "hash": "54360cd5629b82d404f5ee4f2907e4a299bca7862a40d86a7815eabe06f9276c"
+  }
+]

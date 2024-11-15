@@ -1,0 +1,39 @@
+dungeon_id: dungeon1
+name: "Goblin Caves"
+level_min: 1
+level_max: 4
+recommended_party_size: 4
+description: "A classic dungeon crawl through a cave system inhabited by goblins."
+adventure_hook: "The villagers have hired the party to deal with goblins that have been raiding the village of Stony Brook. After a full day of searching the nearby forest, the party found some tracks they believe belongs to the goblins. As the sun is setting, they have followed the tracks to the entrance of a cave. The party can see a torch lit inside."
+rumors:
+  - "The goblins have been raiding the village at night."
+  - "The goblins are led by a powerful shaman named Yart."
+  - "The goblins have been stealing food and supplies."
+rooms:
+  - room_id: room1
+    name: "Entrance"
+    size: [10, 10]
+    description: "Room 1: A dark cave entrance. A character my hear goblins inside the next room if they succeed a listening check DC 10. The room is lit by a torch. If the party is noisy the goblins will be alerted if they succeed a listening check DC 10 and will run from room 2 into this room."
+    connections:
+      - to: room2
+        type: "door"
+    monsters:
+      - goblin
+  - room_id: room2
+    name: "Guard Room"
+    size: [15, 15]
+    description: "A room with goblin guards."
+    connections:
+      - to: room1
+        type: "door"
+      - to: room3
+        type: "secret_door"
+        secret_door_id: secret1
+    monsters:
+      - goblin
+      - goblin
+      - yart_the_goblin_shaman
+loot:
+  - loot_id: loot1
+    room_id: room2
+    description: "A chest filled with gold."

@@ -1,15 +1,18 @@
 // test.js
+// --------------------------------
+const fs = require('fs');
+// --------------------------------
 const readline = require('readline');
 const axios = require('axios');
-const fs = require('fs');
+// --------------------------------
 
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
 });
 
-const DISCORD_AUTOMATION_SERVER_PORT = 3038;
-const DISCORD_AUTOMATION_URL = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}`
+const DISCORD_AUTOMATION_SERVER_PORT = 3037;
+const DISCORD_AUTOMATION_URL = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}/discord`
 const DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT = `${DISCORD_AUTOMATION_URL}/send-command`;
 console.log("DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT =", DISCORD_AUTOMATION_SEND_COMMAND_ENDPOINT);
 const DISCORD_AUTOMATION_SEND_MESSAGE_ENDPOINT = `${DISCORD_AUTOMATION_URL}/send-message`;

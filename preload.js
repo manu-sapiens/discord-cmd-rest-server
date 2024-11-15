@@ -1,8 +1,13 @@
 // preload.js
+// --------------------------------
 const { contextBridge, ipcRenderer } = require('electron');
+// --------------------------------
+
+// Define constants
 const STATE_FIRST_WAIT_FOR_ECHO = 'waiting_for_echo';
 const STATE_SECOND_WAIT_FOR_BOT_RESPONSE_AFTER_ECHO = 'waiting_for_bot_response';
 const STATE_FIRST_WAIT_FOR_ACCUMULATION = 'accumulating_without_echo';
+
 // Define selectors
 const MESSAGE_CONTAINER_SELECTOR = '[data-list-id="chat-messages"]';
 const MESSAGE_ITEM_SELECTOR = 'li[id^="chat-messages"]';
@@ -18,6 +23,7 @@ const EMBED_FIELD_VALUE_SELECTOR = 'div[class*="embedFieldValue"]';
 const MESSAGE_USERNAME_SELECTOR = 'h3[class^="header"] span[class^="username"]';
 const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
 
+// Define timeouts and intervals
 const TIMEOUT_POST_RESPONSE = 20000; // 60 seconds timeout
 const MESSAGE_CHECK_INTERVAL = 100; // Check every 1/10 second
 const TIMEOUT_ACCUMULATION = 2000; // 2 seconds timeout for accumulating without echo

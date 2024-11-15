@@ -1,5 +1,8 @@
+// combine.js
+// --------------------------------
 const fs = require('fs');
 const path = require('path');
+// --------------------------------
 
 // Read patterns from .gitignore file
 function loadGitignorePatterns() {
