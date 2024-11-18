@@ -245,6 +245,12 @@ function handleDiscordMessage(message) {
         const responseMatch = pending.options.responseMatch.toLowerCase();
 
         if (messageContent.includes(responseMatch)) {
+
+            console.log('Match found:', {
+                messageContent,
+                responseMatch
+            });
+
             // Clear timeout and format response
             if (pending.timeoutId) {
                 clearTimeout(pending.timeoutId);

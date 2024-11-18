@@ -28,6 +28,16 @@
         });
     }
 
+    function logCurrentMessage(location) {
+        console.log(`[DEBUG:${location}] currentMessage:`, {
+            exists: currentMessage !== null,
+            id: currentMessage?.id,
+            text: currentMessage?.text,
+            state: currentMessage?.state,
+            age: currentMessage ? Date.now() - currentMessage.startTime : null
+        });
+    }
+
     function clearState(reason) {
         console.log('[RENDERER] Clearing state:', {
             reason,
@@ -42,7 +52,9 @@
             clearTimeout(accumulationTimer);
             accumulationTimer = null;
         }
+        logCurrentMessage('before_clear');
         currentMessage = null;
+        logCurrentMessage('after_clear');
         accumulatedResponses = [];
     }
 
@@ -74,6 +86,16 @@
     // Listen for messages from main process via IPC
     ipcRenderer.receiveMessageFromMain((messageData) => {
         const { messageId, messageText, botUsername, humanUsername, options } = messageData;
+
+        // Handle cleanup message
+        if (messageText === '__cleanup__') {
+            console.log('[RENDERER] Received cleanup signal for message:', messageId);
+            if (currentMessage && currentMessage.id === messageId) {
+                clearState('cleanup_from_queue_processor');
+            }
+            return;
+        }
+
         console.log('[RENDERER] Received message to send:', {
             messageId,
             text: messageText,
@@ -81,18 +103,28 @@
                 processing: currentMessage !== null,
                 currentMessageId: currentMessage?.id,
                 currentCommand: currentMessage?.text,
-                currentState: currentMessage?.state
+                currentState: currentMessage?.state,
+                age: currentMessage ? Date.now() - currentMessage.startTime : null
             }
         });
 
+        // Check for stale state before rejecting
+        if (currentMessage && isMessageStale()) {
+            console.warn('[RENDERER] Clearing stale message before processing new message');
+            clearState('stale_message_detected');
+        }
+
         if (currentMessage) {
-            console.error('[RENDERER] A message is already being processed.');
+            console.error(`[RENDERER] A message is already being processed: text: ${currentMessage.text}, state: ${currentMessage.state}, options: ${JSON.stringify(currentMessage.options)}, id: ${currentMessage.id}, age: ${Date.now() - currentMessage.startTime}, timeout: ${currentMessage.options.timeout || 5000}, timeRunning: ${Date.now() - currentMessage.startTime}`);
             ipcRenderer.sendResponseToMain(messageId, {
                 status: 'error',
                 message: 'Another command is currently being processed.',
                 details: {
                     currentCommand: currentMessage.text,
                     currentState: currentMessage.state,
+                    options: currentMessage.options,
+                    id: currentMessage.id,
+                    age: Date.now() - currentMessage.startTime,
                     timeRunning: Date.now() - currentMessage.startTime
                 }
             });
@@ -109,11 +141,7 @@
             startTime: Date.now(),
         };
 
-        // Check for stale state
-        if (currentMessage && isMessageStale()) {
-            console.warn('[RENDERER] Clearing stale state before processing new message');
-            clearState('stale_message_detected');
-        }
+        logCurrentMessage('after_new_message');
 
         // Start processing the message
         sendMessage(currentMessage);
@@ -122,41 +150,75 @@
 
     // Monitor for message confirmation and bot responses
     function monitorMessages() {
+        logCurrentMessage('monitor_start');
         const messages = document.querySelectorAll('[class*="message__"]');
         const lastMessages = Array.from(messages).slice(-3);
         
         if (currentMessage) {
-            lastMessages.forEach(message => {
+            console.log('[RENDERER] Checking messages for:', {
+                expectedText: currentMessage.text,
+                state: currentMessage.state,
+                messageCount: lastMessages.length
+            });
+            
+            // Use a for...of loop instead of forEach so we can break out completely
+            for (const message of lastMessages) {
+                logCurrentMessage('before_message_check');
                 const messageContent = message.textContent;
                 const authorElement = message.querySelector(MESSAGE_AUTHOR_SELECTOR);
                 const author = authorElement ? authorElement.textContent.trim() : '';
                 
+                console.log('[RENDERER] Examining message:', {
+                    content: messageContent,
+                    author: author,
+                    includesText: messageContent.includes(currentMessage.text)
+                });
+                
                 if (currentMessage.state === 'waiting_for_echo') {
+                    // Look for our message in the chat
                     if (messageContent.includes(currentMessage.text)) {
                         console.log('[RENDERER] Found our message in chat, transitioning from waiting_for_echo to waiting_for_bot');
                         currentMessage.state = 'waiting_for_bot';
                         accumulatedResponses = [];
-                        logMessageState('monitorMessages', 'Message echo found, now waiting for bot');
+                        logCurrentMessage('after_echo_found');
                     }
                 }
                 else if (currentMessage.state === 'waiting_for_bot' && author.includes(AVRAE_USERNAME)) {
+                    logCurrentMessage('before_bot_response');
                     console.log('[RENDERER] Found bot response while in waiting_for_bot state:', messageContent);
                     accumulatedResponses.push({
                         text: messageContent,
                         sender: author
                     });
 
-                    // If we have a responseMatch and it matches, send immediately
+                    // Clean up message content for matching (remove markdown formatting)
+                    const cleanContent = messageContent.replace(/```[a-z]*\n|\n```/g, '').trim();
+                    console.log('[RENDERER] Cleaned message content for matching:', {
+                        original: messageContent,
+                        cleaned: cleanContent,
+                        responseMatch: currentMessage.options.responseMatch,
+                        wouldMatch: cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())
+                    });
+
+                    // If we have a responseMatch and it matches, send immediately and exit
                     if (currentMessage.options.responseMatch && 
-                        messageContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
+                        cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
                         console.log('[RENDERER] Found matching response, clearing state');
-                        ipcRenderer.sendResponseToMain(currentMessage.id, {
+                        logCurrentMessage('before_success_response');
+
+                        // First clear state
+                        const msgId = currentMessage.id;
+                        clearState('matching_response_found');
+                        logCurrentMessage('after_clear_before_send');
+
+                        // Then send response after state is cleared
+                        ipcRenderer.sendResponseToMain(msgId, {
                             status: 'success',
                             message: 'Found matching response',
                             contents: accumulatedResponses
                         });
-                        clearState('matching_response_found');
-                        return;
+                        logCurrentMessage('after_success_response');
+                        return; // Exit the entire function
                     }
                     
                     // Otherwise, start new accumulation timer
@@ -166,6 +228,7 @@
                     }
                     console.log('[RENDERER] Starting new accumulation timer');
                     accumulationTimer = setTimeout(() => {
+                        logCurrentMessage('before_timeout_response');
                         console.log('[RENDERER] Accumulation timeout reached, clearing state');
                         ipcRenderer.sendResponseToMain(currentMessage.id, {
                             status: 'success',
@@ -173,28 +236,33 @@
                             contents: accumulatedResponses
                         });
                         clearState('accumulation_timeout');
+                        logCurrentMessage('after_timeout_response');
                     }, ACCUMULATION_TIMEOUT);
                 }
-            });
+            }
         }
 
         // Check timeout
+        logCurrentMessage('before_timeout_check');
         if (currentMessage && Date.now() - currentMessage.startTime > (currentMessage.options.timeout || 5000)) {
-            console.error('[RENDERER] Message timeout detected');
+            console.error('[RENDERER] Message timeout detected:', {
+                messageAge: Date.now() - currentMessage.startTime,
+                timeout: currentMessage.options.timeout || 5000,
+                state: currentMessage.state
+            });
             ipcRenderer.sendResponseToMain(currentMessage.id, {
                 status: accumulatedResponses.length > 0 ? 'partial' : 'error',
                 message: 'Message timeout - no confirmation received',
                 contents: accumulatedResponses
             });
             clearState('message_timeout');
+            logCurrentMessage('after_timeout');
             return;
         }
 
         // Continue monitoring if message not found
         if (currentMessage) {
             setTimeout(monitorMessages, 100);
-        } else {
-            logMessageState('monitorMessages', 'Monitoring stopped - no current message');
         }
     }
 
