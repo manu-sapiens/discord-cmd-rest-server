@@ -18,15 +18,21 @@ const printHelp = () => {
     console.log(`
 Available commands:
   Messages starting with '!' will use browser automation (e.g., "!roll 1d20")
-  Format: command|response_match
-  Example: !init list|current initiative
+  
+Command formats:
+  1. Simple command: !command
+     Example: !init list
+  
+  2. Command with pattern matching: command|pattern1|pattern2|...
+     Example: !init list|current initiative
+     Example: !init list|current|next|previous
 
 System commands:
-  $info              - Display information about the active Discord channel
-  $botname <name>    - Sets the bot name to <name> for future requests
-  $username <name>   - Sets the username to <name> for future requests
-  $help              - Displays this list of available commands
-  $quit             - Exits the script
+  $info           - Display information about the active Discord channel
+  $botname <n>    - Sets the bot name to <n> for future requests
+  $username <n>   - Sets the username to <n> for future requests
+  $help           - Displays this list of available commands
+  $quit           - Exits the script
 `);
 };
 
@@ -50,17 +56,20 @@ async function getChannelInfo() {
     }
 }
 
-async function sendMessage(messageText, responseMatch = null) {
+async function sendMessage(messageText) {
     try {
+        // Split the input to separate command from patterns
+        const [command, ...patterns] = messageText.split('|');
+        
         const payload = {
-            message: messageText,
+            message: command.trim(),
             botUsername,  
             humanUsername,
-            useBot: !messageText.startsWith('!'),
+            useBot: !command.trim().startsWith('!'),
             options: {
                 expectBotResponse: true,
                 expectEcho: true,
-                responseMatch: responseMatch,
+                responseMatch: patterns.length > 0 ? patterns.map(p => p.trim()) : null,
                 timeout: 20000
             }
         };
@@ -133,13 +142,7 @@ function promptUser() {
             humanUsername = input.slice(10);
             console.log(`Human username set to: ${humanUsername}`);
         } else {
-            // Check if it's a command with response match pattern
-            const parts = input.split('|');
-            if (parts.length === 2) {
-                await sendMessage(parts[0].trim(), parts[1].trim());
-            } else {
-                await sendMessage(input);
-            }
+            await sendMessage(input);
         }
         promptUser();
     });

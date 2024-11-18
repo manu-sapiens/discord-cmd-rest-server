@@ -65,15 +65,21 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
 
                 const timeoutResponse = {
                     status: 'error',
-                    message: `Message timeout after ${timeout}ms - no matching response received`,
+                    message: pending.options.responseMatch 
+                        ? Array.isArray(pending.options.responseMatch)
+                            ? `Message timeout after ${timeout}ms - no matching response found. Looking for: ${pending.options.responseMatch.join(', ')}`
+                            : `Message timeout after ${timeout}ms - no matching response found. Looking for: ${pending.options.responseMatch}`
+                        : `Message timeout after ${timeout}ms - no matching response received`,
                     response: {
                         text: 'Timeout - no matching response received',
                         author: 'System',
                         isBot: false,
                         isDM: false,
                         timestamp: new Date().toISOString(),
-                        matched: null
+                        matched: null,
+                        matchIndex: -1
                     },
+                    responses: pending.responses,
                     elapsedTime: Date.now() - pending.startTime
                 };
                 
@@ -376,18 +382,34 @@ function handleDiscordMessage(message) {
 
     // Check all pending messages for matches
     for (const [messageId, pending] of pendingMessages.entries()) {
-        if (!pending.options.responseMatch) {
+        // Convert responseMatch to array if it's a string or undefined
+        const responseMatches = Array.isArray(pending.options.responseMatch) 
+            ? pending.options.responseMatch 
+            : pending.options.responseMatch 
+                ? [pending.options.responseMatch]
+                : [];
+
+        if (responseMatches.length === 0) {
             continue;
         }
 
         const messageContent = message.content.toLowerCase();
-        const responseMatch = pending.options.responseMatch.toLowerCase();
+        
+        // Check each match pattern in order
+        let matchIndex = -1;
+        let matchedPattern = null;
 
-        if (messageContent.includes(responseMatch)) {
+        matchIndex = responseMatches.findIndex(pattern => 
+            messageContent.includes(pattern.toLowerCase())
+        );
 
+        if (matchIndex !== -1) {
+            matchedPattern = responseMatches[matchIndex];
             console.log('Match found:', {
                 messageContent,
-                responseMatch
+                matchedPattern,
+                matchIndex,
+                allPatterns: responseMatches
             });
 
             // Clear timeout and format response
@@ -405,7 +427,8 @@ function handleDiscordMessage(message) {
                     isBot: message.isBot,
                     isDM: message.isDM,
                     timestamp: new Date().toISOString(),
-                    matched: responseMatch
+                    matched: matchedPattern,
+                    matchIndex: matchIndex
                 },
                 elapsedTime: Date.now() - pending.startTime
             };

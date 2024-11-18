@@ -239,6 +239,71 @@
                         responseMatch: currentMessage.options.responseMatch
                     });
                     
+                    // Clean up message content for matching (remove markdown formatting)
+                    const cleanContent = messageContent.replace(/```[a-z]*\n|\n```/g, '').trim();
+                    const responseMatches = Array.isArray(currentMessage.options.responseMatch) 
+                        ? currentMessage.options.responseMatch 
+                        : currentMessage.options.responseMatch 
+                            ? [currentMessage.options.responseMatch]
+                            : [];
+
+                    console.log('[RENDERER:DEBUG] Cleaned message content for matching:', {
+                        original: messageContent,
+                        cleaned: cleanContent,
+                        hasMatches: responseMatches.length > 0,
+                        matchPatterns: responseMatches
+                    });
+
+                    // Check each match pattern in order
+                    let matchIndex = -1;
+                    let matchedPattern = null;
+                    if (responseMatches.length > 0) {
+                        matchIndex = responseMatches.findIndex(pattern => 
+                            cleanContent.toLowerCase().includes(pattern.toLowerCase())
+                        );
+                        if (matchIndex !== -1) {
+                            matchedPattern = responseMatches[matchIndex];
+                        }
+                    }
+
+                    // If we found a match, send immediately and exit
+                    if (matchedPattern) {
+                        console.log('[RENDERER:DEBUG] Found matching response:', {
+                            matchedPattern,
+                            matchIndex,
+                            timeFromStart: Date.now() - currentMessage.startTime
+                        });
+
+                        // Clear accumulation timer since we found a match
+                        if (accumulationTimer) {
+                            console.log('[RENDERER:TIMER] Clearing accumulation timer due to match');
+                            clearTimeout(accumulationTimer);
+                            accumulationTimer = null;
+                        }
+
+                        // First clear state
+                        const msgId = currentMessage.id;
+                        clearState('matching_response_found');
+
+                        // Then send response after state is cleared
+                        ipcRenderer.sendResponseToMain(msgId, {
+                            status: 'success',
+                            message: 'Found matching response',
+                            response: {
+                                text: cleanContent,
+                                author: author,
+                                isBot: true,
+                                isDM: false,
+                                timestamp: new Date().toISOString(),
+                                matched: matchedPattern,
+                                matchIndex: matchIndex
+                            },
+                            responses: accumulatedResponses,
+                            elapsedTime: Date.now() - currentMessage.startTime
+                        });
+                        return; // Exit the entire function
+                    }
+
                     // If this is our first bot response, notify main process and start accumulation timer
                     if (accumulatedResponses.length === 0) {
                         const startTime = Date.now();
@@ -277,11 +342,11 @@
                             });
 
                             const msgId = currentMessage.id;
-                            const hadMatch = currentMessage.options.responseMatch;
+                            const hadMatches = responseMatches.length > 0;
                             const finalResponse = {
-                                status: hadMatch ? 'error' : 'success',
-                                message: hadMatch 
-                                    ? `No matching response found containing "${currentMessage.options.responseMatch}"`
+                                status: hadMatches ? 'error' : 'success',
+                                message: hadMatches 
+                                    ? `No matching response found. Looking for: ${responseMatches.join(', ')}`
                                     : 'Accumulated all bot responses',
                                 response: {
                                     text: accumulatedResponses.map(r => r.text).join('\n'),
@@ -289,7 +354,8 @@
                                     isBot: true,
                                     isDM: false,
                                     timestamp: new Date().toISOString(),
-                                    matched: null
+                                    matched: null,
+                                    matchIndex: -1
                                 },
                                 responses: accumulatedResponses,
                                 elapsedTime: Date.now() - currentMessage.startTime
@@ -333,53 +399,6 @@
                         timeFromStart: Date.now() - currentMessage.startTime
                     });
 
-                    // Clean up message content for matching (remove markdown formatting)
-                    const cleanContent = messageContent.replace(/```[a-z]*\n|\n```/g, '').trim();
-                    console.log('[RENDERER:DEBUG] Cleaned message content for matching:', {
-                        original: messageContent,
-                        cleaned: cleanContent,
-                        responseMatch: currentMessage.options.responseMatch,
-                        wouldMatch: currentMessage.options.responseMatch ? 
-                            cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase()) : 
-                            'no match required'
-                    });
-
-                    // If we have a responseMatch and it matches, send immediately and exit
-                    if (currentMessage.options.responseMatch && 
-                        cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
-                        console.log('[RENDERER:DEBUG] Found matching response, sending success:', {
-                            matchedText: currentMessage.options.responseMatch,
-                            timeFromStart: Date.now() - currentMessage.startTime
-                        });
-
-                        // Clear accumulation timer since we found a match
-                        if (accumulationTimer) {
-                            console.log('[RENDERER:TIMER] Clearing accumulation timer due to match');
-                            clearTimeout(accumulationTimer);
-                            accumulationTimer = null;
-                        }
-
-                        // First clear state
-                        const msgId = currentMessage.id;
-                        clearState('matching_response_found');
-
-                        // Then send response after state is cleared
-                        ipcRenderer.sendResponseToMain(msgId, {
-                            status: 'success',
-                            message: 'Found matching response',
-                            response: {
-                                text: cleanContent,
-                                author: author,
-                                isBot: true,
-                                isDM: false,
-                                timestamp: new Date().toISOString(),
-                                matched: currentMessage.options.responseMatch
-                            },
-                            responses: accumulatedResponses,
-                            elapsedTime: Date.now() - currentMessage.startTime
-                        });
-                        return; // Exit the entire function
-                    }
                 }
             }
         }
@@ -415,11 +434,11 @@
             }
 
             const msgId = currentMessage.id;
-            const hadMatch = currentMessage.options.responseMatch;
+            const hadMatches = responseMatches.length > 0;
             const response = {
-                status: hadMatch ? 'error' : 'success',
-                message: hadMatch 
-                    ? `No matching response found containing "${currentMessage.options.responseMatch}"`
+                status: hadMatches ? 'error' : 'success',
+                message: hadMatches 
+                    ? `No matching response found. Looking for: ${responseMatches.join(', ')}`
                     : 'Accumulated all bot responses',
                 response: {
                     text: accumulatedResponses.map(r => r.text).join('\n'),
@@ -427,7 +446,8 @@
                     isBot: true,
                     isDM: false,
                     timestamp: new Date().toISOString(),
-                    matched: null
+                    matched: null,
+                    matchIndex: -1
                 },
                 responses: accumulatedResponses,
                 elapsedTime: timeElapsed
