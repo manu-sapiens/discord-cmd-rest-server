@@ -48,14 +48,36 @@
             stackTrace: new Error().stack
         });
         
+        // Clear any existing timers
         if (accumulationTimer) {
             clearTimeout(accumulationTimer);
             accumulationTimer = null;
         }
+
+        // Log state before clearing
         logCurrentMessage('before_clear');
+        
+        // Clear all state variables
         currentMessage = null;
-        logCurrentMessage('after_clear');
         accumulatedResponses = [];
+        
+        // Force garbage collection of large objects
+        if (global.gc) {
+            global.gc();
+        }
+        
+        // Log state after clearing
+        logCurrentMessage('after_clear');
+        
+        // Verify state is actually cleared
+        if (currentMessage !== null || accumulatedResponses.length > 0 || accumulationTimer !== null) {
+            console.error('[RENDERER] Failed to clear state completely:', {
+                reason,
+                currentMessageExists: currentMessage !== null,
+                accumulatedResponsesLength: accumulatedResponses.length,
+                timerExists: accumulationTimer !== null
+            });
+        }
     }
 
     // Verify if current message is stale
@@ -250,14 +272,38 @@
                 timeout: currentMessage.options.timeout || 5000,
                 state: currentMessage.state
             });
-            ipcRenderer.sendResponseToMain(currentMessage.id, {
+            const msgId = currentMessage.id;
+            const response = {
                 status: accumulatedResponses.length > 0 ? 'partial' : 'error',
                 message: 'Message timeout - no confirmation received',
                 contents: accumulatedResponses
-            });
+            };
+            
+            // Clear state before sending response
             clearState('message_timeout');
-            logCurrentMessage('after_timeout');
-            return;
+            logCurrentMessage('after_timeout_clear');
+            
+            // Send response after state is cleared
+            ipcRenderer.sendResponseToMain(msgId, response);
+            return; // Exit the function after timeout
+        }
+
+        // Check for stale message state
+        if (isMessageStale()) {
+            const msgId = currentMessage.id;
+            const response = {
+                status: 'error',
+                message: 'Message became stale - clearing state',
+                contents: accumulatedResponses
+            };
+            
+            // Clear state before sending response
+            clearState('stale_message');
+            logCurrentMessage('after_stale_clear');
+            
+            // Send response after state is cleared
+            ipcRenderer.sendResponseToMain(msgId, response);
+            return; // Exit the function after stale check
         }
 
         // Continue monitoring if message not found

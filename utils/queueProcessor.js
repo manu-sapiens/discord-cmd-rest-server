@@ -62,13 +62,33 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
                     elapsedTime: Date.now() - pending.startTime,
                     timeout
                 });
+
+                // Clear timeout
+                if (pending.timeoutId) {
+                    clearTimeout(pending.timeoutId);
+                }
+
                 const timeoutResponse = {
                     status: 'error',
                     message: `Message timeout after ${timeout}ms - no matching response received`,
-                    responses: pending.responses // Return any accumulated responses
+                    response: {
+                        text: 'Timeout - no matching response received',
+                        author: 'System',
+                        isBot: false,
+                        isDM: false,
+                        timestamp: new Date().toISOString(),
+                        matched: null
+                    },
+                    elapsedTime: Date.now() - pending.startTime
                 };
-                pending.resolve(timeoutResponse);
+                
+                // Cleanup and resolve
                 pendingMessages.delete(messageId);
+                messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+                pending.resolve(timeoutResponse);
+                
+                // Process next message if any
+                processNextMessage();
             }
         }, timeout);
 
