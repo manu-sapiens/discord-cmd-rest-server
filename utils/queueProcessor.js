@@ -380,24 +380,97 @@ function handleDiscordMessage(message) {
 
     // Extract content from embeds if message content is empty
     let effectiveContent = message.content;
+    let embedThumbnailUrl = null;
+
+    function extractMarkdownUrls(text) {
+        const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+        const urls = [];
+        let match;
+        
+        console.log('Extracting URLs from text:', text);
+        
+        while ((match = markdownLinkRegex.exec(text)) !== null) {
+            console.log('Found Markdown match:', {
+                fullMatch: match[0],
+                text: match[1],
+                url: match[2]
+            });
+            urls.push({
+                text: match[1],
+                url: match[2]
+            });
+        }
+        
+        console.log('Extracted URLs:', urls);
+        return urls;
+    }
+
+    // First check for Markdown links in the content
+    console.log('Message content before URL extraction:', effectiveContent);
+    let mapUrl = null;
+
     if (message.embeds && message.embeds.length > 0) {
         const embed = message.embeds[0];
         console.log('Processing embed:', JSON.stringify(embed, null, 2));
         
+        // Check embed image first
+        if (embed.image && embed.image.url) {
+            console.log('Found embed image URL:', embed.image.url);
+            mapUrl = embed.image.url;
+        }
+        
+        // If no image URL, check fields for Markdown links
+        if (!mapUrl && embed.fields) {
+            for (const field of embed.fields) {
+                const fieldUrls = extractMarkdownUrls(field.value);
+                const fieldMapUrl = fieldUrls.find(u => u.text.toLowerCase().trim() === 'map')?.url;
+                if (fieldMapUrl) {
+                    console.log('Found map URL in field:', fieldMapUrl);
+                    mapUrl = fieldMapUrl;
+                    break;
+                }
+            }
+        }
+        
+        // If still no URL, check thumbnail
+        if (!mapUrl && embed.thumbnail && embed.thumbnail.url) {
+            console.log('Found thumbnail URL:', embed.thumbnail.url);
+            mapUrl = embed.thumbnail.url;
+        }
+        
         // Extract all possible content from embed
         const embedContent = [
-            embed.author?.name,  // Often contains the title/name
+            embed.author?.name,
             embed.title,
             embed.description,
             ...(embed.fields || []).map(f => `${f.name}: ${f.value}`)
         ].filter(Boolean).join('\n');
 
-        // If message content is empty, use embed content, otherwise append it
         effectiveContent = effectiveContent 
             ? `${effectiveContent}\n${embedContent}`
             : embedContent;
         
         console.log('\nExtracted embed content:', effectiveContent);
+    }
+
+    // If we found a map URL, use it
+    if (mapUrl) {
+        console.log('Using map URL:', mapUrl);
+        embedThumbnailUrl = mapUrl;
+    } else {
+        console.log('No map URL found in any source');
+    }
+
+    // Then check Markdown links in the content
+    if (!embedThumbnailUrl) {
+        const markdownUrls = extractMarkdownUrls(effectiveContent);
+        const mapUrl = markdownUrls.find(u => u.text.toLowerCase().trim() === 'map')?.url;
+        if (mapUrl) {
+            console.log('Found map URL:', mapUrl);
+            embedThumbnailUrl = mapUrl;
+        } else {
+            console.log('No map URL found in Markdown links');
+        }
     }
 
     console.log('\nProcessing Discord message:', {
@@ -413,12 +486,6 @@ function handleDiscordMessage(message) {
             pending.accumulator = [];
         }
 
-        // Add current message to accumulator
-        pending.accumulator.push({
-            content: effectiveContent,
-            timestamp: Date.now()
-        });
-
         // Try to match against current message immediately
         const responseMatches = Array.isArray(pending.options.responseMatch) 
             ? pending.options.responseMatch 
@@ -426,6 +493,19 @@ function handleDiscordMessage(message) {
                 ? [pending.options.responseMatch]
                 : [];
 
+        // Clear any existing timeout since we got a new message
+        if (pending.accumulationTimeout) {
+            clearTimeout(pending.accumulationTimeout);
+            delete pending.accumulationTimeout;
+        }
+
+        // Add current message to accumulator
+        pending.accumulator.push({
+            content: effectiveContent,
+            timestamp: Date.now()
+        });
+
+        let matched = false;
         if (responseMatches.length > 0) {
             // Try matching just this message
             let matchIndex = responseMatches.findIndex(pattern => 
@@ -449,6 +529,7 @@ function handleDiscordMessage(message) {
             }
 
             if (matchIndex !== -1) {
+                matched = true;
                 const matchedPattern = responseMatches[matchIndex];
                 console.log('Match found:', {
                     matchedPattern,
@@ -463,25 +544,58 @@ function handleDiscordMessage(message) {
                         text: matchedContent,
                         author: message.author,
                         matched: matchedPattern,
-                        matchIndex: matchIndex
+                        matchIndex: matchIndex,
+                        thumbnailUrl: embedThumbnailUrl
                     }
                 });
                 return;
             }
+        }
 
-            // If this is the first message, start accumulation timer
-            if (pending.accumulator.length === 1) {
-                console.log('Starting accumulation timer for', messageId);
-                setTimeout(() => {
-                    // Only process timeout if message is still pending
-                    if (pendingMessages.has(messageId)) {
-                        const allContent = pending.accumulator.map(m => m.content).join('\n');
-                        console.log('Accumulation timeout - no match found:', {
+        // If no match was found, set/reset the accumulation timer
+        if (!matched) {
+            console.log('Setting/resetting accumulation timer for', messageId);
+            pending.accumulationTimeout = setTimeout(() => {
+                // Only process timeout if message is still pending
+                if (pendingMessages.has(messageId)) {
+                    // Check if we've received any messages in the last 5 seconds
+                    const now = Date.now();
+                    const lastMessageTime = Math.max(...pending.accumulator.map(m => m.timestamp));
+                    const timeSinceLastMessage = now - lastMessageTime;
+
+                    if (timeSinceLastMessage < 4900) { // slightly less than 5s to account for processing time
+                        // We received a message recently, reset the timer
+                        console.log('Recent message detected, resetting timer:', {
                             messageId,
-                            accumulatedMessages: pending.accumulator.length,
-                            patterns: responseMatches
+                            timeSinceLastMessage,
+                            accumulatedMessages: pending.accumulator.length
                         });
-                        
+                        clearTimeout(pending.accumulationTimeout);
+                        pending.accumulationTimeout = setTimeout(arguments.callee, 5000);
+                        return;
+                    }
+
+                    const allContent = pending.accumulator.map(m => m.content).join('\n');
+                    console.log('Accumulation timeout reached:', {
+                        messageId,
+                        accumulatedMessages: pending.accumulator.length,
+                        hasMatchPatterns: responseMatches.length > 0,
+                        timeSinceLastMessage
+                    });
+                    
+                    if (!responseMatches.length) {
+                        handleMessageResponse(messageId, {
+                            status: 'success',
+                            message: 'Accumulated bot responses',
+                            response: {
+                                text: allContent,
+                                author: message.author,
+                                matched: null,
+                                matchIndex: -1,
+                                thumbnailUrl: embedThumbnailUrl
+                            }
+                        });
+                    } else {
                         handleMessageResponse(messageId, {
                             status: 'error',
                             message: `No matching response found. Looking for: ${responseMatches.join(', ')}`,
@@ -489,12 +603,13 @@ function handleDiscordMessage(message) {
                                 text: allContent,
                                 author: message.author,
                                 matched: null,
-                                matchIndex: -1
+                                matchIndex: -1,
+                                thumbnailUrl: embedThumbnailUrl
                             }
                         });
                     }
-                }, 2000); // 2 second accumulation window
-            }
+                }
+            }, 5000); // 5 second window that resets with each new message
         }
     }
 }
