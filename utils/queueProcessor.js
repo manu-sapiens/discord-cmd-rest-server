@@ -63,11 +63,6 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
                     timeout
                 });
 
-                // Clear timeout
-                if (pending.timeoutId) {
-                    clearTimeout(pending.timeoutId);
-                }
-
                 const timeoutResponse = {
                     status: 'error',
                     message: `Message timeout after ${timeout}ms - no matching response received`,
@@ -82,13 +77,34 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
                     elapsedTime: Date.now() - pending.startTime
                 };
                 
-                // Cleanup and resolve
+                // Clear timeout and cleanup
+                if (pending.timeoutId) {
+                    clearTimeout(pending.timeoutId);
+                    pending.timeoutId = null;
+                }
+
+                // Send cleanup signal to renderer
+                const mainWindow = getMainWindow();
+                if (mainWindow) {
+                    mainWindow.webContents.send('send-message-to-renderer', {
+                        messageId,
+                        messageText: '__cleanup__',
+                        botUsername: '',
+                        humanUsername: '',
+                        options: {}
+                    });
+                }
+
+                // Cleanup state
                 pendingMessages.delete(messageId);
                 messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-                pending.resolve(timeoutResponse);
                 
-                // Process next message if any
-                processNextMessage();
+                // Resolve after a small delay to ensure cleanup is processed
+                setTimeout(() => {
+                    pending.resolve(timeoutResponse);
+                    // Process next message if any
+                    processNextMessage();
+                }, POST_RESOLVE_TIMEOUT);
             }
         }, timeout);
 
@@ -233,8 +249,22 @@ function handleMessageResponse(messageId, response) {
     // Clear timeout and cleanup
     if (pending.timeoutId) {
         clearTimeout(pending.timeoutId);
+        pending.timeoutId = null;
     }
-    
+
+    // Send cleanup signal to renderer
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+        mainWindow.webContents.send('send-message-to-renderer', {
+            messageId,
+            messageText: '__cleanup__',
+            botUsername: '',
+            humanUsername: '',
+            options: {}
+        });
+    }
+
+    // Cleanup state
     pendingMessages.delete(messageId);
     messageQueue = messageQueue.filter(m => m.messageId !== messageId);
     
@@ -274,6 +304,7 @@ function handleDiscordMessage(message) {
             // Clear timeout and format response
             if (pending.timeoutId) {
                 clearTimeout(pending.timeoutId);
+                pending.timeoutId = null;
             }
 
             const result = {
@@ -290,13 +321,29 @@ function handleDiscordMessage(message) {
                 elapsedTime: Date.now() - pending.startTime
             };
 
-            // Cleanup and resolve
+            // Send cleanup signal to renderer
+            const mainWindow = getMainWindow();
+            if (mainWindow) {
+                mainWindow.webContents.send('send-message-to-renderer', {
+                    messageId,
+                    messageText: '__cleanup__',
+                    botUsername: '',
+                    humanUsername: '',
+                    options: {}
+                });
+            }
+
+            // Cleanup state
             pendingMessages.delete(messageId);
             messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-            pending.resolve(result);
             
-            // Process next message
-            processNextMessage();
+            // Resolve after a small delay to ensure cleanup is processed
+            setTimeout(() => {
+                pending.resolve(result);
+                // Process next message
+                processNextMessage();
+            }, POST_RESOLVE_TIMEOUT);
+            
             return;
         }
 

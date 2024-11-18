@@ -77,7 +77,23 @@
                 accumulatedResponsesLength: accumulatedResponses.length,
                 timerExists: accumulationTimer !== null
             });
+            
+            // Force clear again if verification failed
+            currentMessage = null;
+            accumulatedResponses = [];
+            if (accumulationTimer) {
+                clearTimeout(accumulationTimer);
+                accumulationTimer = null;
+            }
         }
+        
+        // Log final state
+        console.log('[RENDERER] State after clearing:', {
+            reason,
+            currentMessageExists: currentMessage !== null,
+            accumulatedResponsesLength: accumulatedResponses.length,
+            timerExists: accumulationTimer !== null
+        });
     }
 
     // Verify if current message is stale
