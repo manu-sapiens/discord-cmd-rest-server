@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendResponseToMain: (messageId, response) => {
         ipcRenderer.send('message-response', { messageId, response });
     },
+    getAvraeUsername: () => process.env.AVRAE_DISCORD_BOT_NAME || 'Avrae'
 });
 
 // Listen for 'start-automation' message from the main process
@@ -422,4 +423,3 @@ function automationScript()
         }
     }
 }
-       
