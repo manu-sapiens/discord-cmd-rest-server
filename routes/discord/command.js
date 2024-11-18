@@ -20,7 +20,8 @@ router.post('/', async (req, res) => {
   }
 
   // Ensure the message starts with the command prefix
-  let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
+  // let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
+  // Actually, let the user do that - more flexible this way
 
   // Enqueue the command and expect a bot response
   try {

@@ -312,6 +312,13 @@ function automationScript()
                         });
                     }
 
+                    // Add thumbnail if available
+                    const thumbnailElement = embed.querySelector('.imageContent_cf58b5 img, .imageContainer_cf58b5 img');
+                    if (thumbnailElement) {
+                        const thumbnailUrl = thumbnailElement.getAttribute('src');
+                        embedContentArray.push(`Thumbnail: ${thumbnailUrl}`);
+                    }
+
                     embed = embedContentArray.join('\n');
                 }
             

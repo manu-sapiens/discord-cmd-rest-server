@@ -3,6 +3,7 @@
 const fs = require('fs');
 const yaml = require('js-yaml');
 const path = require('path');
+const { start } = require('repl');
 // --------------------------------
 
 class Dungeon {
@@ -13,6 +14,10 @@ class Dungeon {
 
     getDungeonInfo() 
     {
+
+        const starting_room_id = this.data.starting_room_id;
+        const start_room_info = this.data.rooms.find((room) => room.room_id === starting_room_id);
+
         const dungeon_info = 
         {
             dungeon_id: this.data.dungeon_id,
@@ -22,7 +27,14 @@ class Dungeon {
             recommended_party_size: this.data.recommended_party_size,
             description: this.data.description,
             adventure_hook: this.data.adventure_hook,
-            rumors: this.data.rumors
+            rumors: this.data.rumors,
+            starting_room_id: starting_room_id,
+            starting_room_info: start_room_info,
+            rooms: this.data.rooms,
+            monsters: this.data.monsters,
+            loot: this.data.loot,
+            connections: this.data.connections,
+
         };
         console.log("----------");
         console.log("dungeon_info: ", dungeon_info);
