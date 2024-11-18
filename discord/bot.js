@@ -1,4 +1,4 @@
-const { Client, Events, GatewayIntentBits, ChannelType } = require('discord.js');
+const { Client, Events, GatewayIntentBits, ChannelType, Partials } = require('discord.js');
 const { EventEmitter } = require('events');
 
 class DiscordBot extends EventEmitter {
@@ -11,16 +11,70 @@ class DiscordBot extends EventEmitter {
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
+                GatewayIntentBits.DirectMessageTyping,
+                GatewayIntentBits.DirectMessageReactions
+            ],
+            partials: [
+                Partials.Message,
+                Partials.Channel,
+                Partials.Reaction
             ]
         });
         this.token = token;
         this.activeChannelId = null;
         this.activeChannel = null;
+
+        // Track DM channels
+        this.dmChannels = new Set();
         this.setupEventHandlers();
     }
 
     setupEventHandlers() {
         console.log('Setting up Discord bot event handlers...');
+
+        // Debug: Log all raw events with full data for deletes
+        this.client.on('raw', event => {
+            if (event.t === 'MESSAGE_DELETE') {
+                console.log('Message Delete event details:', {
+                    id: event.d?.id,
+                    channelId: event.d?.channel_id,
+                    guildId: event.d?.guild_id,
+                    fullData: event.d
+                });
+            } else {
+                console.log('Raw event received:', {
+                    type: event.t,
+                    channelId: event.d?.channel_id,
+                    channelType: event.d?.channel_type,
+                    author: event.d?.author?.username
+                });
+            }
+        });
+
+        // Debug: Log all message events
+        this.client.on('messageCreate', message => {
+            console.log('MessageCreate event:', {
+                content: message.content,
+                channelType: message.channel.type,
+                channelId: message.channelId,
+                author: message.author.username,
+                isDM: message.channel.type === ChannelType.DM,
+                guildId: message.guildId
+            });
+        });
+
+        // Add specific handler for message delete events
+        this.client.on('messageDelete', message => {
+            console.log('Message deleted:', {
+                content: message.content,
+                author: message.author?.username,
+                channelId: message.channelId,
+                channelType: message.channel.type,
+                isDM: message.channel.type === ChannelType.DM,
+                wasFromBot: message.author?.bot,
+                messageId: message.id
+            });
+        });
 
         this.client.on(Events.ClientReady, () => {
             console.log(`Discord bot ready! Logged in as ${this.client.user.tag}`);
@@ -28,19 +82,47 @@ class DiscordBot extends EventEmitter {
             console.log('Connected to servers:', 
                 Array.from(this.client.guilds.cache.values())
                     .map(guild => `${guild.name} (${guild.id})`));
+            
+            // Debug: Log all available channels
+            console.log('Available channels:', 
+                Array.from(this.client.channels.cache.values())
+                    .map(channel => ({
+                        name: channel.name,
+                        id: channel.id,
+                        type: channel.type,
+                        isDM: channel.type === ChannelType.DM
+                    }))
+            );
+            
             this.emit('ready');
         });
 
         // Process raw message events for better control
-        this.client.on('raw', (event) => {
+        this.client.on('raw', async (event) => {
             if (event.t === 'MESSAGE_CREATE') {
                 const data = event.d;
                 
-                // Log raw event
+                // Get the channel to determine its type
+                const channel = await this.client.channels.fetch(data.channel_id).catch(err => {
+                    console.error('Error fetching channel:', err);
+                    return null;
+                });
+
+                if (!channel) {
+                    console.log('Could not fetch channel:', data.channel_id);
+                    return;
+                }
+
+                const isDM = channel.type === ChannelType.DM;
+                
+                // Log raw event with more details
                 console.log('Raw MESSAGE_CREATE event received:', {
                     content: data.content,
                     author: data.author.username,
                     channelId: data.channel_id,
+                    channelType: channel.type,
+                    isDM: isDM,
+                    isFromAvrae: data.author.username === 'Avrae',
                     embeds: data.embeds
                 });
 
@@ -49,29 +131,58 @@ class DiscordBot extends EventEmitter {
                     return;
                 }
 
-                // Get channel type (DM = 1, Guild Text = 0)
-                const isDM = data.channel_type === 1;
+                const isFromActiveChannel = data.channel_id === this.activeChannelId;
+                const isFromAvrae = data.author.username === 'Avrae';
 
-                if (process.env.DEBUG) {
-                    console.log('Processing message:', {
-                        content: data.content,
-                        author: data.author.username,
-                        channelId: data.channel_id,
-                        isBot: data.author.bot,
-                        channelType: data.channel_type,
-                        isDM: isDM
-                    });
+                // If it's a DM from Avrae, store the channel ID
+                if (isDM && isFromAvrae) {
+                    this.dmChannels.add(data.channel_id);
                 }
 
+                // Debug log for message filtering
+                console.log('Message filter check:', {
+                    isDM,
+                    isFromActiveChannel,
+                    isFromAvrae,
+                    willAccept: isFromActiveChannel || (isDM && isFromAvrae)
+                });
+
+                // Accept messages if they're either:
+                // 1. From the active channel, or
+                // 2. DMs from Avrae
+                if (isFromActiveChannel || (isDM && isFromAvrae)) {
+                    // Emit message event with full data
+                    this.emit('message', {
+                        content: data.content,
+                        author: `${data.author.username}#${data.author.discriminator}`,
+                        channelId: data.channel_id,
+                        isBot: data.author.bot,
+                        isDM: isDM,
+                        isActiveChannel: isFromActiveChannel,
+                        embeds: data.embeds
+                    });
+                }
+            }
+        });
+
+        // Handle direct messages specifically
+        this.client.on(Events.MessageCreate, message => {
+            if (message.channel.type === ChannelType.DM && message.author.username === 'Avrae') {
+                console.log('Direct message from Avrae received:', {
+                    content: message.content,
+                    embeds: message.embeds,
+                    channelId: message.channelId
+                });
+                
                 // Emit message event with full data
                 this.emit('message', {
-                    content: data.content,
-                    author: `${data.author.username}#${data.author.discriminator}`,
-                    channelId: data.channel_id,
-                    isBot: data.author.bot,
-                    isDM: data.channel_type === ChannelType.DM,
-                    isActiveChannel: data.channel_id === this.activeChannelId,
-                    embeds: data.embeds
+                    content: message.content,
+                    author: `${message.author.username}#${message.author.discriminator}`,
+                    channelId: message.channelId,
+                    isBot: message.author.bot,
+                    isDM: true,
+                    isActiveChannel: false,
+                    embeds: message.embeds
                 });
             }
         });

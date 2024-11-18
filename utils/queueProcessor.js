@@ -371,7 +371,10 @@ function handleMessageResponse(messageId, response) {
 }
 
 function handleDiscordMessage(message) {
-    if (!message.isBot) {
+    // Accept bot messages from either:
+    // 1. The active channel, or
+    // 2. DMs from Avrae
+    if (!message.isBot || (!message.isActiveChannel && !(message.isDM && message.author.includes('Avrae')))) {
         return;
     }
 
@@ -503,7 +506,7 @@ function logPendingMessages() {
     });
 }
 
-setInterval(logPendingMessages, 5000);
+//setInterval(logPendingMessages, 5000);
 
 function initializeQueueProcessor() {
     // Clear any existing listeners
