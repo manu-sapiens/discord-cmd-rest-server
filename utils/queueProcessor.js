@@ -5,7 +5,6 @@ const { getMainWindow } = require('./windowManager');
 const { updateMap, updateOtherImage } = require('./imageViewerManager');
 // --------------------------------
 
-const DEFAULT_TIMEOUT = 20000; // 20 seconds
 const POST_RESOLVE_TIMEOUT = 5000; // 5 seconds for cleanup
 
 let messageQueue = [];
@@ -31,7 +30,7 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
             options,
             responses: [], // Store accumulated bot responses
             startTime: Date.now(),
-            timeoutId: null // Store timeout ID for clearing
+            accumulator: [] // Initialize accumulator
         });
 
         console.log('Stored pending message with options:', {
@@ -52,73 +51,6 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
         if (!isProcessing) {
             processNextMessage();
         }
-
-        // Set timeout for message
-        const timeout = options.timeout || DEFAULT_TIMEOUT;
-        const timeoutId = setTimeout(() => {
-            const pending = pendingMessages.get(messageId);
-            if (pending) {
-                console.log('Timeout reached for messageId', messageId, {
-                    responseCount: pending.responses.length,
-                    elapsedTime: Date.now() - pending.startTime,
-                    timeout
-                });
-
-                const timeoutResponse = {
-                    status: 'error',
-                    message: pending.options.responseMatch 
-                        ? Array.isArray(pending.options.responseMatch)
-                            ? `Message timeout after ${timeout}ms - no matching response found. Looking for: ${pending.options.responseMatch.join(', ')}`
-                            : `Message timeout after ${timeout}ms - no matching response found. Looking for: ${pending.options.responseMatch}`
-                        : `Message timeout after ${timeout}ms - no matching response received`,
-                    response: {
-                        text: 'Timeout - no matching response received',
-                        author: 'System',
-                        isBot: false,
-                        isDM: false,
-                        timestamp: new Date().toISOString(),
-                        matched: null,
-                        matchIndex: -1
-                    },
-                    responses: pending.responses,
-                    elapsedTime: Date.now() - pending.startTime
-                };
-                
-                // Clear timeout and cleanup
-                if (pending.timeoutId) {
-                    clearTimeout(pending.timeoutId);
-                    pending.timeoutId = null;
-                }
-
-                // Send cleanup signal to renderer
-                const mainWindow = getMainWindow();
-                if (mainWindow) {
-                    mainWindow.webContents.send('send-message-to-renderer', {
-                        messageId,
-                        messageText: '__cleanup__',
-                        botUsername: '',
-                        humanUsername: '',
-                        options: {}
-                    });
-                }
-
-                // Cleanup state
-                pendingMessages.delete(messageId);
-                messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-                
-                // Resolve after a small delay to ensure cleanup is processed
-                setTimeout(() => {
-                    pending.resolve(timeoutResponse);
-                    // Process next message if any
-                    processNextMessage();
-                }, POST_RESOLVE_TIMEOUT);
-            }
-        }, timeout);
-
-        // Store the timeout ID
-        const pending = pendingMessages.get(messageId);
-        pending.timeoutId = timeoutId;
-        pendingMessages.set(messageId, pending);
     });
 }
 
@@ -156,9 +88,6 @@ function processNextMessage() {
             // Try to resolve the message promise with error
             const pending = pendingMessages.get(message.messageId);
             if (pending) {
-                if (pending.timeoutId) {
-                    clearTimeout(pending.timeoutId);
-                }
                 pending.resolve(errorResponse);
                 pendingMessages.delete(message.messageId);
             }
@@ -191,9 +120,6 @@ function processNextMessage() {
 
         const pending = pendingMessages.get(message.messageId);
         if (pending) {
-            if (pending.timeoutId) {
-                clearTimeout(pending.timeoutId);
-            }
             pending.resolve(errorResponse);
             pendingMessages.delete(message.messageId);
         }
@@ -255,7 +181,6 @@ function handleMessageResponse(messageId, response) {
         messageId,
         status: response.status,
         timeFromStart: Date.now() - pending.startTime,
-        hasTimeout: pending.timeoutId !== null,
         responseMatch: pending.options.responseMatch
     });
     
@@ -264,82 +189,12 @@ function handleMessageResponse(messageId, response) {
         console.log('[MAIN:DEBUG] Bot started responding, handling timeouts:', {
             messageId,
             timeFromStart: Date.now() - pending.startTime,
-            hadTimeout: pending.timeoutId !== null
         });
-
-        if (pending.timeoutId) {
-            console.log('[MAIN:DEBUG] Clearing original timeout');
-            clearTimeout(pending.timeoutId);
-            pending.timeoutId = null;
-        }
-
-        // Set a new timeout for 10 seconds in case something goes wrong with the renderer
-        console.log('[MAIN:DEBUG] Setting backup timeout');
-        pending.timeoutId = setTimeout(() => {
-            console.log('[MAIN:DEBUG] Backup timeout fired:', {
-                messageId,
-                timeFromStart: Date.now() - pending.startTime,
-                hadResponses: response.responses?.length > 0
-            });
-
-            const timeoutResponse = {
-                status: 'error',
-                message: 'Backup timeout - renderer process did not complete',
-                response: response.response || {
-                    text: 'Timeout - renderer process did not complete',
-                    author: 'System',
-                    isBot: false,
-                    isDM: false,
-                    timestamp: new Date().toISOString(),
-                    matched: null
-                },
-                responses: response.responses || [],
-                elapsedTime: Date.now() - pending.startTime
-            };
-            
-            console.log('[MAIN:DEBUG] Sending backup timeout response:', {
-                messageId,
-                status: timeoutResponse.status,
-                message: timeoutResponse.message,
-                timeFromStart: Date.now() - pending.startTime
-            });
-
-            // Clear state and resolve
-            pendingMessages.delete(messageId);
-            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-            pending.resolve(timeoutResponse);
-
-            // Send cleanup signal to renderer
-            const mainWindow = getMainWindow();
-            if (mainWindow) {
-                console.log('[MAIN:DEBUG] Sending cleanup signal to renderer');
-                mainWindow.webContents.send('send-message-to-renderer', {
-                    messageId,
-                    messageText: '__cleanup__',
-                    botUsername: '',
-                    humanUsername: '',
-                    options: {}
-                });
-            }
-
-            // Process next message
-            processNextMessage();
-        }, 10000); // 10 second backup timeout
 
         return;
     }
     
     // Clear timeout and cleanup
-    if (pending.timeoutId) {
-        console.log('[MAIN:DEBUG] Clearing timeout for final response:', {
-            messageId,
-            status: response.status,
-            timeFromStart: Date.now() - pending.startTime
-        });
-        clearTimeout(pending.timeoutId);
-        pending.timeoutId = null;
-    }
-
     console.log('[MAIN:DEBUG] Processing final response:', {
         messageId,
         status: response.status,
@@ -513,24 +368,18 @@ function handleDiscordMessage(message) {
             pending.accumulator = [];
         }
 
+        // Add current message to accumulator
+        pending.accumulator.push({
+            content: effectiveContent,
+            timestamp: Date.now()
+        });
+
         // Try to match against current message immediately
         const responseMatches = Array.isArray(pending.options.responseMatch) 
             ? pending.options.responseMatch 
             : pending.options.responseMatch 
                 ? [pending.options.responseMatch]
                 : [];
-
-        // Clear any existing timeout since we got a new message
-        if (pending.accumulationTimeout) {
-            clearTimeout(pending.accumulationTimeout);
-            delete pending.accumulationTimeout;
-        }
-
-        // Add current message to accumulator
-        pending.accumulator.push({
-            content: effectiveContent,
-            timestamp: Date.now()
-        });
 
         let matched = false;
         if (responseMatches.length > 0) {
@@ -582,6 +431,10 @@ function handleDiscordMessage(message) {
         // If no match was found, set/reset the accumulation timer
         if (!matched) {
             console.log('Setting/resetting accumulation timer for', messageId);
+            // Clear any existing accumulation timeout
+            if (pending.accumulationTimeout) {
+                clearTimeout(pending.accumulationTimeout);
+            }
             pending.accumulationTimeout = setTimeout(() => {
                 // Only process timeout if message is still pending
                 if (pendingMessages.has(messageId)) {
@@ -592,7 +445,7 @@ function handleDiscordMessage(message) {
 
                     if (timeSinceLastMessage < 4900) { // slightly less than 5s to account for processing time
                         // We received a message recently, reset the timer
-                        console.log('Recent message detected, resetting timer:', {
+                        console.log('Recent message detected, resetting accumulation timer:', {
                             messageId,
                             timeSinceLastMessage,
                             accumulatedMessages: pending.accumulator.length
