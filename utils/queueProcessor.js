@@ -377,13 +377,22 @@ function handleDiscordMessage(message) {
 
     // Extract content from embeds if message content is empty
     let effectiveContent = message.content;
-    if (!effectiveContent && message.embeds && message.embeds.length > 0) {
+    if (message.embeds && message.embeds.length > 0) {
         const embed = message.embeds[0];
-        effectiveContent = [
+        console.log('Processing embed:', JSON.stringify(embed, null, 2));
+        
+        // Extract all possible content from embed
+        const embedContent = [
+            embed.author?.name,  // Often contains the title/name
             embed.title,
             embed.description,
             ...(embed.fields || []).map(f => `${f.name}: ${f.value}`)
         ].filter(Boolean).join('\n');
+
+        // If message content is empty, use embed content, otherwise append it
+        effectiveContent = effectiveContent 
+            ? `${effectiveContent}\n${embedContent}`
+            : embedContent;
         
         console.log('\nExtracted embed content:', effectiveContent);
     }
