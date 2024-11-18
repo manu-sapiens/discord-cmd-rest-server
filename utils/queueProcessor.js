@@ -2,6 +2,7 @@
 // --------------------------------
 const { ipcMain } = require('electron');
 const { getMainWindow } = require('./windowManager');
+const { updateMap, updateOtherImage } = require('./imageViewerManager');
 // --------------------------------
 
 const DEFAULT_TIMEOUT = 20000; // 20 seconds
@@ -405,9 +406,17 @@ function handleDiscordMessage(message) {
         return urls;
     }
 
+    function isMapUrl(url) {
+        return url && (
+            url.includes('otfbm.io') || // Standard Avrae battle maps
+            url.includes('otfbm.com')    // Just in case they change the domain
+        );
+    }
+
     // First check for Markdown links in the content
     console.log('Message content before URL extraction:', effectiveContent);
     let mapUrl = null;
+    let otherImageUrl = null;
 
     if (message.embeds && message.embeds.length > 0) {
         const embed = message.embeds[0];
@@ -416,14 +425,18 @@ function handleDiscordMessage(message) {
         // Check embed image first
         if (embed.image && embed.image.url) {
             console.log('Found embed image URL:', embed.image.url);
-            mapUrl = embed.image.url;
+            if (isMapUrl(embed.image.url)) {
+                mapUrl = embed.image.url;
+            } else {
+                otherImageUrl = embed.image.url;
+            }
         }
         
-        // If no image URL, check fields for Markdown links
+        // If no map URL, check fields for Markdown links
         if (!mapUrl && embed.fields) {
             for (const field of embed.fields) {
                 const fieldUrls = extractMarkdownUrls(field.value);
-                const fieldMapUrl = fieldUrls.find(u => u.text.toLowerCase().trim() === 'map')?.url;
+                const fieldMapUrl = fieldUrls.find(u => isMapUrl(u.url))?.url;
                 if (fieldMapUrl) {
                     console.log('Found map URL in field:', fieldMapUrl);
                     mapUrl = fieldMapUrl;
@@ -432,10 +445,14 @@ function handleDiscordMessage(message) {
             }
         }
         
-        // If still no URL, check thumbnail
-        if (!mapUrl && embed.thumbnail && embed.thumbnail.url) {
+        // If still no URLs, check thumbnail
+        if (!mapUrl && !otherImageUrl && embed.thumbnail && embed.thumbnail.url) {
             console.log('Found thumbnail URL:', embed.thumbnail.url);
-            mapUrl = embed.thumbnail.url;
+            if (isMapUrl(embed.thumbnail.url)) {
+                mapUrl = embed.thumbnail.url;
+            } else {
+                otherImageUrl = embed.thumbnail.url;
+            }
         }
         
         // Extract all possible content from embed
@@ -453,21 +470,31 @@ function handleDiscordMessage(message) {
         console.log('\nExtracted embed content:', effectiveContent);
     }
 
-    // If we found a map URL, use it
+    // If we found any URLs, use them
     if (mapUrl) {
         console.log('Using map URL:', mapUrl);
         embedThumbnailUrl = mapUrl;
+        // Update the image viewer with the map
+        updateMap(mapUrl);
     } else {
         console.log('No map URL found in any source');
+    }
+
+    if (otherImageUrl) {
+        console.log('Found other image URL:', otherImageUrl);
+        // Update the other image section
+        updateOtherImage(otherImageUrl);
     }
 
     // Then check Markdown links in the content
     if (!embedThumbnailUrl) {
         const markdownUrls = extractMarkdownUrls(effectiveContent);
-        const mapUrl = markdownUrls.find(u => u.text.toLowerCase().trim() === 'map')?.url;
+        const mapUrl = markdownUrls.find(u => isMapUrl(u.url))?.url;
         if (mapUrl) {
             console.log('Found map URL:', mapUrl);
             embedThumbnailUrl = mapUrl;
+            // Update the image viewer with the map
+            updateMap(mapUrl);
         } else {
             console.log('No map URL found in Markdown links');
         }

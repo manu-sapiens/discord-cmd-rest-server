@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { getMainWindow, setMainWindow } = require('./utils/windowManager');
+const { createImageViewerWindow } = require('./utils/imageViewerManager');
 
 // Routes
 const roomRoute = require('./routes/places/room');
@@ -49,6 +50,9 @@ function createWindow() {
     // Initialize queue processor
     const { initializeQueueProcessor } = require('./utils/queueProcessor');
     initializeQueueProcessor();
+
+    // Create image viewer window
+    createImageViewerWindow();
 
     win.webContents.setUserAgent(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36"

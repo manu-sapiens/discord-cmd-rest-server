@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Discord Image Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #36393f;
+            color: #dcddde;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .viewer-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            border-bottom: 1px solid #202225;
+        }
+        .viewer-section h2 {
+            margin: 0 0 10px 0;
+            color: #ffffff;
+            font-size: 16px;
+        }
+        .image-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #2f3136;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        #map-section {
+            flex: 3;
+        }
+        #other-section {
+            flex: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="map-section" class="viewer-section">
+            <h2>Map View</h2>
+            <div class="image-container">
+                <img id="map-image" src="" alt="No map available">
+            </div>
+        </div>
+        <div id="other-section" class="viewer-section">
+            <h2>Other Images</h2>
+            <div class="image-container">
+                <img id="other-image" src="" alt="No image available">
+            </div>
+        </div>
+    </div>
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        ipcRenderer.on('update-map', (event, url) => {
+            if (url) {
+                document.getElementById('map-image').src = url;
+            }
+        });
+
+        ipcRenderer.on('update-other-image', (event, url) => {
+            if (url) {
+                document.getElementById('other-image').src = url;
+            }
+        });
+    </script>
+</body>
+</html>
