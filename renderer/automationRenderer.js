@@ -11,7 +11,14 @@
     const MESSAGE_BOX_SELECTOR = 'div[role="textbox"][contenteditable="true"]';
     const MESSAGE_AUTHOR_SELECTOR = '[class*="username_"]';  // Updated selector
     const AVRAE_USERNAME = ipcRenderer.getAvraeUsername();  // Get from IPC bridge
-    const ACCUMULATION_TIMEOUT = 2000; // 2 seconds to accumulate responses
+    const ACCUMULATION_TIMEOUT = 5000; // 5 seconds to accumulate responses
+
+    console.log('[RENDERER:INIT] Setting up with constants:', {
+        MESSAGE_BOX_SELECTOR,
+        MESSAGE_AUTHOR_SELECTOR,
+        AVRAE_USERNAME,
+        ACCUMULATION_TIMEOUT
+    });
 
     let currentMessage = null;
     let accumulatedResponses = [];
@@ -61,8 +68,8 @@
         currentMessage = null;
         accumulatedResponses = [];
         
-        // Force garbage collection of large objects
-        if (global.gc) {
+        // Force garbage collection if available (in Node.js context)
+        if (typeof global !== 'undefined' && global.gc) {
             global.gc();
         }
         
@@ -223,81 +230,211 @@
                 }
                 else if (currentMessage.state === 'waiting_for_bot' && author.includes(AVRAE_USERNAME)) {
                     logCurrentMessage('before_bot_response');
-                    console.log('[RENDERER] Found bot response while in waiting_for_bot state:', messageContent);
+                    console.log('[RENDERER:DEBUG] Found bot response while in waiting_for_bot state:', {
+                        messageContent,
+                        currentAccumulatedCount: accumulatedResponses.length,
+                        hasAccumulationTimer: accumulationTimer !== null,
+                        timeFromStart: Date.now() - currentMessage.startTime,
+                        hasResponseMatch: currentMessage.options.responseMatch !== undefined,
+                        responseMatch: currentMessage.options.responseMatch
+                    });
+                    
+                    // If this is our first bot response, notify main process and start accumulation timer
+                    if (accumulatedResponses.length === 0) {
+                        const startTime = Date.now();
+                        console.log('[RENDERER:TIMER] About to start accumulation timer:', {
+                            timeout: ACCUMULATION_TIMEOUT,
+                            startTime,
+                            willEndAt: new Date(startTime + ACCUMULATION_TIMEOUT).toISOString()
+                        });
+
+                        ipcRenderer.sendResponseToMain(currentMessage.id, {
+                            status: 'receiving_responses',
+                            message: 'Started receiving bot responses',
+                            response: {
+                                text: messageContent,
+                                author: author,
+                                isBot: true,
+                                isDM: false,
+                                timestamp: new Date().toISOString(),
+                                matched: null
+                            },
+                            responses: accumulatedResponses,
+                            elapsedTime: Date.now() - currentMessage.startTime
+                        });
+
+                        // Start accumulation timer only on first response
+                        console.log('[RENDERER:TIMER] Creating accumulation timer with timeout:', ACCUMULATION_TIMEOUT);
+
+                        accumulationTimer = setTimeout(() => {
+                            const endTime = Date.now();
+                            console.log('[RENDERER:TIMER] Accumulation timer FIRED:', {
+                                startTime,
+                                endTime,
+                                actualDuration: endTime - startTime,
+                                expectedDuration: ACCUMULATION_TIMEOUT,
+                                difference: (endTime - startTime) - ACCUMULATION_TIMEOUT
+                            });
+
+                            const msgId = currentMessage.id;
+                            const hadMatch = currentMessage.options.responseMatch;
+                            const finalResponse = {
+                                status: hadMatch ? 'error' : 'success',
+                                message: hadMatch 
+                                    ? `No matching response found containing "${currentMessage.options.responseMatch}"`
+                                    : 'Accumulated all bot responses',
+                                response: {
+                                    text: accumulatedResponses.map(r => r.text).join('\n'),
+                                    author: AVRAE_USERNAME,
+                                    isBot: true,
+                                    isDM: false,
+                                    timestamp: new Date().toISOString(),
+                                    matched: null
+                                },
+                                responses: accumulatedResponses,
+                                elapsedTime: Date.now() - currentMessage.startTime
+                            };
+
+                            console.log('[RENDERER:TIMER] Preparing to send final response after timer:', {
+                                status: finalResponse.status,
+                                responseCount: accumulatedResponses.length,
+                                timeFromStart: Date.now() - currentMessage.startTime,
+                                message: finalResponse.message,
+                                currentMessageExists: currentMessage !== null,
+                                currentMessageState: currentMessage?.state
+                            });
+
+                            // First clear state
+                            clearState('accumulation_timeout');
+                            
+                            console.log('[RENDERER:TIMER] State cleared, sending final response');
+                            
+                            // Then send response
+                            ipcRenderer.sendResponseToMain(msgId, finalResponse);
+
+                            console.log('[RENDERER:TIMER] Final response sent');
+                        }, ACCUMULATION_TIMEOUT);
+
+                        console.log('[RENDERER:TIMER] Accumulation timer created:', {
+                            timerExists: accumulationTimer !== null,
+                            timeout: ACCUMULATION_TIMEOUT,
+                            currentTime: new Date().toISOString()
+                        });
+                    }
+                    
                     accumulatedResponses.push({
                         text: messageContent,
                         sender: author
                     });
 
+                    console.log('[RENDERER:DEBUG] Added response to accumulated list:', {
+                        totalResponses: accumulatedResponses.length,
+                        latestResponse: messageContent.substring(0, 100) + '...',
+                        timeFromStart: Date.now() - currentMessage.startTime
+                    });
+
                     // Clean up message content for matching (remove markdown formatting)
                     const cleanContent = messageContent.replace(/```[a-z]*\n|\n```/g, '').trim();
-                    console.log('[RENDERER] Cleaned message content for matching:', {
+                    console.log('[RENDERER:DEBUG] Cleaned message content for matching:', {
                         original: messageContent,
                         cleaned: cleanContent,
                         responseMatch: currentMessage.options.responseMatch,
-                        wouldMatch: cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())
+                        wouldMatch: currentMessage.options.responseMatch ? 
+                            cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase()) : 
+                            'no match required'
                     });
 
                     // If we have a responseMatch and it matches, send immediately and exit
                     if (currentMessage.options.responseMatch && 
                         cleanContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
-                        console.log('[RENDERER] Found matching response, clearing state');
-                        logCurrentMessage('before_success_response');
+                        console.log('[RENDERER:DEBUG] Found matching response, sending success:', {
+                            matchedText: currentMessage.options.responseMatch,
+                            timeFromStart: Date.now() - currentMessage.startTime
+                        });
+
+                        // Clear accumulation timer since we found a match
+                        if (accumulationTimer) {
+                            console.log('[RENDERER:TIMER] Clearing accumulation timer due to match');
+                            clearTimeout(accumulationTimer);
+                            accumulationTimer = null;
+                        }
 
                         // First clear state
                         const msgId = currentMessage.id;
                         clearState('matching_response_found');
-                        logCurrentMessage('after_clear_before_send');
 
                         // Then send response after state is cleared
                         ipcRenderer.sendResponseToMain(msgId, {
                             status: 'success',
                             message: 'Found matching response',
-                            contents: accumulatedResponses
+                            response: {
+                                text: cleanContent,
+                                author: author,
+                                isBot: true,
+                                isDM: false,
+                                timestamp: new Date().toISOString(),
+                                matched: currentMessage.options.responseMatch
+                            },
+                            responses: accumulatedResponses,
+                            elapsedTime: Date.now() - currentMessage.startTime
                         });
-                        logCurrentMessage('after_success_response');
                         return; // Exit the entire function
                     }
-                    
-                    // Otherwise, start new accumulation timer
-                    if (accumulationTimer) {
-                        console.log('[RENDERER] Clearing existing accumulation timer');
-                        clearTimeout(accumulationTimer);
-                    }
-                    console.log('[RENDERER] Starting new accumulation timer');
-                    accumulationTimer = setTimeout(() => {
-                        logCurrentMessage('before_timeout_response');
-                        console.log('[RENDERER] Accumulation timeout reached, clearing state');
-                        ipcRenderer.sendResponseToMain(currentMessage.id, {
-                            status: 'success',
-                            message: 'Received bot responses',
-                            contents: accumulatedResponses
-                        });
-                        clearState('accumulation_timeout');
-                        logCurrentMessage('after_timeout_response');
-                    }, ACCUMULATION_TIMEOUT);
                 }
             }
         }
 
         // Check timeout
         logCurrentMessage('before_timeout_check');
-        if (currentMessage && Date.now() - currentMessage.startTime > (currentMessage.options.timeout || 5000)) {
+        const timeElapsed = Date.now() - currentMessage.startTime;
+        const hasStartedAccumulating = accumulatedResponses.length > 0;
+        const effectiveTimeout = hasStartedAccumulating ? ACCUMULATION_TIMEOUT : (currentMessage.options.timeout || 5000);
+
+        console.log('[RENDERER:DEBUG] Checking timeout:', {
+            timeElapsed,
+            hasStartedAccumulating,
+            effectiveTimeout,
+            accumulatedResponses: accumulatedResponses.length,
+            state: currentMessage.state
+        });
+
+        if (currentMessage && timeElapsed > effectiveTimeout) {
             console.error('[RENDERER] Message timeout detected:', {
-                messageAge: Date.now() - currentMessage.startTime,
-                timeout: currentMessage.options.timeout || 5000,
-                state: currentMessage.state
+                messageAge: timeElapsed,
+                effectiveTimeout,
+                originalTimeout: currentMessage.options.timeout || 5000,
+                state: currentMessage.state,
+                accumulatedResponses: accumulatedResponses.length
             });
+
+            // Clear any existing accumulation timer
+            if (accumulationTimer) {
+                console.log('[RENDERER:TIMER] Clearing accumulation timer due to timeout');
+                clearTimeout(accumulationTimer);
+                accumulationTimer = null;
+            }
+
             const msgId = currentMessage.id;
+            const hadMatch = currentMessage.options.responseMatch;
             const response = {
-                status: accumulatedResponses.length > 0 ? 'partial' : 'error',
-                message: 'Message timeout - no confirmation received',
-                contents: accumulatedResponses
+                status: hadMatch ? 'error' : 'success',
+                message: hadMatch 
+                    ? `No matching response found containing "${currentMessage.options.responseMatch}"`
+                    : 'Accumulated all bot responses',
+                response: {
+                    text: accumulatedResponses.map(r => r.text).join('\n'),
+                    author: AVRAE_USERNAME,
+                    isBot: true,
+                    isDM: false,
+                    timestamp: new Date().toISOString(),
+                    matched: null
+                },
+                responses: accumulatedResponses,
+                elapsedTime: timeElapsed
             };
             
             // Clear state before sending response
             clearState('message_timeout');
-            logCurrentMessage('after_timeout_clear');
             
             // Send response after state is cleared
             ipcRenderer.sendResponseToMain(msgId, response);
@@ -310,7 +447,16 @@
             const response = {
                 status: 'error',
                 message: 'Message became stale - clearing state',
-                contents: accumulatedResponses
+                response: {
+                    text: 'Message became stale',
+                    author: AVRAE_USERNAME,
+                    isBot: true,
+                    isDM: false,
+                    timestamp: new Date().toISOString(),
+                    matched: null
+                },
+                responses: accumulatedResponses,
+                elapsedTime: Date.now() - currentMessage.startTime
             };
             
             // Clear state before sending response
@@ -345,7 +491,17 @@
             );
             ipcRenderer.sendResponseToMain(message.id, {
                 status: 'error',
-                message: 'Message box not found'
+                message: 'Message box not found',
+                response: {
+                    text: 'Message box not found',
+                    author: AVRAE_USERNAME,
+                    isBot: true,
+                    isDM: false,
+                    timestamp: new Date().toISOString(),
+                    matched: null
+                },
+                responses: [],
+                elapsedTime: Date.now() - message.startTime
             });
             clearState('message_box_not_found');
             return;
@@ -394,10 +550,16 @@
             ipcRenderer.sendResponseToMain(message.id, {
                 status: 'error',
                 message: `Error sending message: ${error.message}`,
-                details: {
-                    messageBoxContent: messageBox.textContent,
-                    expectedText: message.text
-                }
+                response: {
+                    text: 'Error sending message',
+                    author: AVRAE_USERNAME,
+                    isBot: true,
+                    isDM: false,
+                    timestamp: new Date().toISOString(),
+                    matched: null
+                },
+                responses: [],
+                elapsedTime: Date.now() - message.startTime
             });
             clearState('error_sending_message');
         }

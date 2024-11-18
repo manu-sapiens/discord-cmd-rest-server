@@ -240,17 +240,105 @@ function deliverMessage(message) {
 function handleMessageResponse(messageId, response) {
     const pending = pendingMessages.get(messageId);
     if (!pending) {
-        console.log('No pending message found for messageId', messageId);
+        console.log('[MAIN:DEBUG] No pending message found for messageId', messageId);
         return;
     }
 
-    console.log('Received response for messageId', messageId, ':', response);
+    console.log('[MAIN:DEBUG] Received response for messageId:', {
+        messageId,
+        status: response.status,
+        timeFromStart: Date.now() - pending.startTime,
+        hasTimeout: pending.timeoutId !== null,
+        responseMatch: pending.options.responseMatch
+    });
+    
+    // If we're just starting to receive responses, clear the timeout and set a shorter one
+    if (response.status === 'receiving_responses') {
+        console.log('[MAIN:DEBUG] Bot started responding, handling timeouts:', {
+            messageId,
+            timeFromStart: Date.now() - pending.startTime,
+            hadTimeout: pending.timeoutId !== null
+        });
+
+        if (pending.timeoutId) {
+            console.log('[MAIN:DEBUG] Clearing original timeout');
+            clearTimeout(pending.timeoutId);
+            pending.timeoutId = null;
+        }
+
+        // Set a new timeout for 10 seconds in case something goes wrong with the renderer
+        console.log('[MAIN:DEBUG] Setting backup timeout');
+        pending.timeoutId = setTimeout(() => {
+            console.log('[MAIN:DEBUG] Backup timeout fired:', {
+                messageId,
+                timeFromStart: Date.now() - pending.startTime,
+                hadResponses: response.responses?.length > 0
+            });
+
+            const timeoutResponse = {
+                status: 'error',
+                message: 'Backup timeout - renderer process did not complete',
+                response: response.response || {
+                    text: 'Timeout - renderer process did not complete',
+                    author: 'System',
+                    isBot: false,
+                    isDM: false,
+                    timestamp: new Date().toISOString(),
+                    matched: null
+                },
+                responses: response.responses || [],
+                elapsedTime: Date.now() - pending.startTime
+            };
+            
+            console.log('[MAIN:DEBUG] Sending backup timeout response:', {
+                messageId,
+                status: timeoutResponse.status,
+                message: timeoutResponse.message,
+                timeFromStart: Date.now() - pending.startTime
+            });
+
+            // Clear state and resolve
+            pendingMessages.delete(messageId);
+            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+            pending.resolve(timeoutResponse);
+
+            // Send cleanup signal to renderer
+            const mainWindow = getMainWindow();
+            if (mainWindow) {
+                console.log('[MAIN:DEBUG] Sending cleanup signal to renderer');
+                mainWindow.webContents.send('send-message-to-renderer', {
+                    messageId,
+                    messageText: '__cleanup__',
+                    botUsername: '',
+                    humanUsername: '',
+                    options: {}
+                });
+            }
+
+            // Process next message
+            processNextMessage();
+        }, 10000); // 10 second backup timeout
+
+        return;
+    }
     
     // Clear timeout and cleanup
     if (pending.timeoutId) {
+        console.log('[MAIN:DEBUG] Clearing timeout for final response:', {
+            messageId,
+            status: response.status,
+            timeFromStart: Date.now() - pending.startTime
+        });
         clearTimeout(pending.timeoutId);
         pending.timeoutId = null;
     }
+
+    console.log('[MAIN:DEBUG] Processing final response:', {
+        messageId,
+        status: response.status,
+        timeFromStart: Date.now() - pending.startTime,
+        message: response.message
+    });
 
     // Cleanup state
     pendingMessages.delete(messageId);
@@ -262,6 +350,7 @@ function handleMessageResponse(messageId, response) {
     // Send cleanup signal to renderer after resolving
     const mainWindow = getMainWindow();
     if (mainWindow) {
+        console.log('[MAIN:DEBUG] Sending cleanup signal to renderer');
         mainWindow.webContents.send('send-message-to-renderer', {
             messageId,
             messageText: '__cleanup__',
@@ -271,7 +360,7 @@ function handleMessageResponse(messageId, response) {
         });
     }
 
-    // Process next message if any
+    // Process next message
     processNextMessage();
 }
 
