@@ -40,7 +40,8 @@ class DiscordBot extends EventEmitter {
                 console.log('Raw MESSAGE_CREATE event received:', {
                     content: data.content,
                     author: data.author.username,
-                    channelId: data.channel_id
+                    channelId: data.channel_id,
+                    embeds: data.embeds
                 });
 
                 // Ignore messages from our own bot to prevent loops
@@ -62,14 +63,15 @@ class DiscordBot extends EventEmitter {
                     });
                 }
 
-                // Emit message event for other handlers
+                // Emit message event with full data
                 this.emit('message', {
                     content: data.content,
                     author: `${data.author.username}#${data.author.discriminator}`,
                     channelId: data.channel_id,
                     isBot: data.author.bot,
-                    isDM: isDM,
-                    isActiveChannel: data.channel_id === this.activeChannelId
+                    isDM: data.channel_type === ChannelType.DM,
+                    isActiveChannel: data.channel_id === this.activeChannelId,
+                    embeds: data.embeds
                 });
             }
         });

@@ -26,6 +26,7 @@ Command formats:
   2. Command with pattern matching: command|pattern1|pattern2|...
      Example: !init list|current initiative
      Example: !init list|current|next|previous
+     Example: !game status|Eldara
 
 System commands:
   $info           - Display information about the active Discord channel
@@ -60,15 +61,16 @@ async function sendMessage(messageText) {
     try {
         // Split the input to separate command from patterns
         const [command, ...patterns] = messageText.split('|');
+        const trimmedCommand = command.trim();
         
         const payload = {
-            message: command.trim(),
+            message: trimmedCommand,
             botUsername,  
             humanUsername,
-            useBot: !command.trim().startsWith('!'),
+            useBot: !trimmedCommand.startsWith('!'),
             options: {
                 expectBotResponse: true,
-                expectEcho: true,
+                expectEcho: true,  // Keep echo detection for state machine
                 responseMatch: patterns.length > 0 ? patterns.map(p => p.trim()) : null,
                 timeout: 20000
             }

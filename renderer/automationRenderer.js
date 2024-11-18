@@ -221,22 +221,51 @@
                 
                 if (currentMessage.state === 'waiting_for_echo') {
                     // Look for our message in the chat
-                    if (messageContent.includes(currentMessage.text)) {
-                        console.log('[RENDERER] Found our message in chat, transitioning from waiting_for_echo to waiting_for_bot');
+                    console.log('[RENDERER:STATE] Looking for echo:', {
+                        expectedText: currentMessage.text,
+                        actualContent: messageContent,
+                        author,
+                        isCommand: currentMessage.text.startsWith('!'),
+                        wouldMatch: messageContent.includes(currentMessage.text)
+                    });
+                    
+                    const isCommand = currentMessage.text.startsWith('!');
+                    const isEcho = messageContent.includes(currentMessage.text);
+                    
+                    // For commands: proceed if it's an echo OR if we see a bot response
+                    // For non-commands: only proceed if we see the echo
+                    if (isEcho || (isCommand && author.includes(AVRAE_USERNAME))) {
+                        const transitionReason = isEcho ? 'echo_found' : 'command_bot_response';
+                        console.log('[RENDERER:STATE] Transitioning to waiting_for_bot:', {
+                            reason: transitionReason,
+                            messageContent,
+                            author,
+                            timeFromStart: Date.now() - currentMessage.startTime
+                        });
+                        
                         currentMessage.state = 'waiting_for_bot';
                         accumulatedResponses = [];
                         logCurrentMessage('after_echo_found');
+                        
+                        // If we transitioned due to a bot response, process it now
+                        if (transitionReason === 'command_bot_response') {
+                            console.log('[RENDERER:STATE] Processing first bot response immediately');
+                            accumulatedResponses.push({
+                                text: messageContent,
+                                sender: author
+                            });
+                        }
                     }
                 }
                 else if (currentMessage.state === 'waiting_for_bot' && author.includes(AVRAE_USERNAME)) {
                     logCurrentMessage('before_bot_response');
-                    console.log('[RENDERER:DEBUG] Found bot response while in waiting_for_bot state:', {
+                    console.log('[RENDERER:STATE] Processing bot response:', {
+                        state: currentMessage.state,
                         messageContent,
-                        currentAccumulatedCount: accumulatedResponses.length,
-                        hasAccumulationTimer: accumulationTimer !== null,
+                        author,
                         timeFromStart: Date.now() - currentMessage.startTime,
-                        hasResponseMatch: currentMessage.options.responseMatch !== undefined,
-                        responseMatch: currentMessage.options.responseMatch
+                        accumulatedCount: accumulatedResponses.length,
+                        hasTimer: accumulationTimer !== null
                     });
                     
                     // Clean up message content for matching (remove markdown formatting)

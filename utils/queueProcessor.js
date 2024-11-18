@@ -375,97 +375,115 @@ function handleDiscordMessage(message) {
         return;
     }
 
+    // Extract content from embeds if message content is empty
+    let effectiveContent = message.content;
+    if (!effectiveContent && message.embeds && message.embeds.length > 0) {
+        const embed = message.embeds[0];
+        effectiveContent = [
+            embed.title,
+            embed.description,
+            ...(embed.fields || []).map(f => `${f.name}: ${f.value}`)
+        ].filter(Boolean).join('\n');
+        
+        console.log('\nExtracted embed content:', effectiveContent);
+    }
+
     console.log('\nProcessing Discord message:', {
-        content: message.content,
-        author: message.author
+        content: effectiveContent,
+        author: message.author,
+        hasEmbeds: message.embeds?.length > 0
     });
 
-    // Check all pending messages for matches
+    // Check all pending messages
     for (const [messageId, pending] of pendingMessages.entries()) {
-        // Convert responseMatch to array if it's a string or undefined
+        // Initialize accumulator if needed
+        if (!pending.accumulator) {
+            pending.accumulator = [];
+        }
+
+        // Add current message to accumulator
+        pending.accumulator.push({
+            content: effectiveContent,
+            timestamp: Date.now()
+        });
+
+        // Try to match against current message immediately
         const responseMatches = Array.isArray(pending.options.responseMatch) 
             ? pending.options.responseMatch 
             : pending.options.responseMatch 
                 ? [pending.options.responseMatch]
                 : [];
 
-        if (responseMatches.length === 0) {
-            continue;
-        }
+        if (responseMatches.length > 0) {
+            // Try matching just this message
+            let matchIndex = responseMatches.findIndex(pattern => 
+                effectiveContent.toLowerCase().includes(pattern.toLowerCase())
+            );
 
-        const messageContent = message.content.toLowerCase();
-        
-        // Check each match pattern in order
-        let matchIndex = -1;
-        let matchedPattern = null;
-
-        matchIndex = responseMatches.findIndex(pattern => 
-            messageContent.includes(pattern.toLowerCase())
-        );
-
-        if (matchIndex !== -1) {
-            matchedPattern = responseMatches[matchIndex];
-            console.log('Match found:', {
-                messageContent,
-                matchedPattern,
-                matchIndex,
-                allPatterns: responseMatches
-            });
-
-            // Clear timeout and format response
-            if (pending.timeoutId) {
-                clearTimeout(pending.timeoutId);
-                pending.timeoutId = null;
+            // If no match, try matching against accumulated content
+            let matchedContent = effectiveContent;
+            if (matchIndex === -1) {
+                const allContent = pending.accumulator.map(m => m.content).join('\n');
+                matchIndex = responseMatches.findIndex(pattern => 
+                    allContent.toLowerCase().includes(pattern.toLowerCase())
+                );
+                if (matchIndex !== -1) {
+                    // Find which message had the match
+                    const matchedMessage = pending.accumulator.find(m => 
+                        m.content.toLowerCase().includes(responseMatches[matchIndex].toLowerCase())
+                    );
+                    matchedContent = matchedMessage ? matchedMessage.content : allContent;
+                }
             }
 
-            const result = {
-                status: 'success',
-                message: 'Found matching response',
-                response: {
-                    text: message.content,
-                    author: message.author,
-                    isBot: message.isBot,
-                    isDM: message.isDM,
-                    timestamp: new Date().toISOString(),
-                    matched: matchedPattern,
-                    matchIndex: matchIndex
-                },
-                elapsedTime: Date.now() - pending.startTime
-            };
-
-            // Cleanup state
-            pendingMessages.delete(messageId);
-            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-            
-            // Resolve immediately for success case
-            pending.resolve(result);
-            
-            // Send cleanup signal to renderer after resolving
-            const mainWindow = getMainWindow();
-            if (mainWindow) {
-                mainWindow.webContents.send('send-message-to-renderer', {
-                    messageId,
-                    messageText: '__cleanup__',
-                    botUsername: '',
-                    humanUsername: '',
-                    options: {}
+            if (matchIndex !== -1) {
+                const matchedPattern = responseMatches[matchIndex];
+                console.log('Match found:', {
+                    matchedPattern,
+                    matchIndex,
+                    messageCount: pending.accumulator.length
                 });
+
+                handleMessageResponse(messageId, {
+                    status: 'success',
+                    message: 'Found matching response',
+                    response: {
+                        text: matchedContent,
+                        author: message.author,
+                        matched: matchedPattern,
+                        matchIndex: matchIndex
+                    }
+                });
+                return;
             }
 
-            // Process next message
-            processNextMessage();
-            
-            return;
+            // If this is the first message, start accumulation timer
+            if (pending.accumulator.length === 1) {
+                console.log('Starting accumulation timer for', messageId);
+                setTimeout(() => {
+                    // Only process timeout if message is still pending
+                    if (pendingMessages.has(messageId)) {
+                        const allContent = pending.accumulator.map(m => m.content).join('\n');
+                        console.log('Accumulation timeout - no match found:', {
+                            messageId,
+                            accumulatedMessages: pending.accumulator.length,
+                            patterns: responseMatches
+                        });
+                        
+                        handleMessageResponse(messageId, {
+                            status: 'error',
+                            message: `No matching response found. Looking for: ${responseMatches.join(', ')}`,
+                            response: {
+                                text: allContent,
+                                author: message.author,
+                                matched: null,
+                                matchIndex: -1
+                            }
+                        });
+                    }
+                }, 2000); // 2 second accumulation window
+            }
         }
-
-        // Store response for potential timeout
-        pending.responses.push({
-            text: message.content,
-            author: message.author,
-            isBot: message.isBot,
-            isDM: message.isDM,
-            timestamp: new Date().toISOString()
-        });
     }
 }
 
