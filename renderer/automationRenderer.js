@@ -24,7 +24,11 @@
 
         if (currentMessage) {
             console.error('[RENDERER] A message is already being processed.');
-            ipcRenderer.sendResponseToMain(messageId, '[RENDERER]Another message is currently being processed.');
+            ipcRenderer.sendResponseToMain(messageId, {
+                status: 'error',
+                message: 'Another command is currently being processed. Please wait for it to complete.',
+                currentCommand: currentMessage.text
+            });
             return;
         }
 
@@ -105,6 +109,7 @@
                                 contents: accumulatedResponses
                             });
                             currentMessage = null;
+                            accumulationTimer = null;  // Reset the timer
                             return;
                         }
                         
@@ -120,6 +125,7 @@
                                 contents: accumulatedResponses
                             });
                             currentMessage = null;
+                            accumulationTimer = null;  // Reset the timer
                         }, ACCUMULATION_TIMEOUT);
                     }
                 }
@@ -138,6 +144,7 @@
                 contents: accumulatedResponses
             });
             currentMessage = null;
+            accumulationTimer = null;  // Reset the timer
             return;
         }
 
