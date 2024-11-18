@@ -79,6 +79,7 @@ function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
     });
 }
 
+// Manage the message queue
 function processNextMessage() {
     if (messageQueue.length === 0) {
         isProcessing = false;
@@ -87,154 +88,193 @@ function processNextMessage() {
 
     isProcessing = true;
     const message = messageQueue[0];
-    const mainWindow = getMainWindow();
+    
+    try {
+        // Attempt to deliver the message
+        if (!deliverMessage(message)) {
+            console.error(`[CRITICAL] Message delivery failed for message ID ${message.messageId}:`, {
+                text: message.messageText,
+                user: message.humanUsername,
+                queueLength: messageQueue.length,
+                timestamp: new Date().toISOString()
+            });
 
-    if (!mainWindow) {
-        console.error('Main window not available');
+            // Notify the user about the failure
+            const errorResponse = {
+                status: 'error',
+                message: 'Failed to deliver message - Discord window not available',
+                error: {
+                    type: 'DELIVERY_FAILURE',
+                    messageId: message.messageId,
+                    timestamp: new Date().toISOString()
+                }
+            };
+
+            // Try to resolve the message promise with error
+            const pending = pendingMessages.get(message.messageId);
+            if (pending) {
+                if (pending.timeoutId) {
+                    clearTimeout(pending.timeoutId);
+                }
+                pending.resolve(errorResponse);
+                pendingMessages.delete(message.messageId);
+            }
+
+            // Remove failed message and try next one
+            console.warn(`[QUEUE] Removing failed message from queue. ${messageQueue.length - 1} messages remaining`);
+            messageQueue.shift();
+            processNextMessage();
+            return;
+        }
+    } catch (error) {
+        console.error('[CRITICAL] Unexpected error in message processing:', {
+            error: error.message,
+            stack: error.stack,
+            messageId: message.messageId,
+            text: message.messageText
+        });
+
+        // Handle the error similarly to delivery failure
+        const errorResponse = {
+            status: 'error',
+            message: 'Unexpected error in message processing',
+            error: {
+                type: 'PROCESSING_ERROR',
+                messageId: message.messageId,
+                details: error.message,
+                timestamp: new Date().toISOString()
+            }
+        };
+
+        const pending = pendingMessages.get(message.messageId);
+        if (pending) {
+            if (pending.timeoutId) {
+                clearTimeout(pending.timeoutId);
+            }
+            pending.resolve(errorResponse);
+            pendingMessages.delete(message.messageId);
+        }
+
         messageQueue.shift();
         processNextMessage();
-        return;
+    }
+}
+
+// Handle the actual message delivery
+function deliverMessage(message) {
+    const mainWindow = getMainWindow();
+    if (!mainWindow) {
+        console.error('[CRITICAL] Main window not available for message delivery:', {
+            messageId: message.messageId,
+            windowState: 'NOT_AVAILABLE',
+            timestamp: new Date().toISOString()
+        });
+        return false;
     }
 
-    console.log('Sending message to renderer:', message.messageText);
-    mainWindow.webContents.send('send-message-to-renderer', message);
+    if (!mainWindow.webContents) {
+        console.error('[CRITICAL] Window web contents not available:', {
+            messageId: message.messageId,
+            windowState: 'NO_WEBCONTENTS',
+            timestamp: new Date().toISOString()
+        });
+        return false;
+    }
+
+    try {
+        console.log('[DELIVERY] Sending message to renderer:', {
+            messageId: message.messageId,
+            text: message.messageText,
+            timestamp: new Date().toISOString()
+        });
+        mainWindow.webContents.send('send-message-to-renderer', message);
+        return true;
+    } catch (error) {
+        console.error('[CRITICAL] Failed to send message to renderer:', {
+            error: error.message,
+            stack: error.stack,
+            messageId: message.messageId,
+            text: message.messageText,
+            timestamp: new Date().toISOString()
+        });
+        return false;
+    }
 }
 
 function handleMessageResponse(messageId, response) {
-    console.log('Received response for messageId', messageId, ':', response);
-    
     const pending = pendingMessages.get(messageId);
     if (!pending) {
         console.log('No pending message found for messageId', messageId);
         return;
     }
 
-    if (response.status === 'success') {
-        // If we have a responseMatch option, check if any response matches
-        if (pending.options.responseMatch && response.contents) {
-            const matchingResponse = response.contents.find(r => 
-                r.text.toLowerCase().includes(pending.options.responseMatch.toLowerCase())
-            );
-            
-            if (matchingResponse) {
-                // Found matching response
-                pending.resolve({
-                    status: 'success',
-                    message: 'Found matching response',
-                    response: matchingResponse
-                });
-                pendingMessages.delete(messageId);
-            } else {
-                // Store responses for potential timeout
-                pending.responses.push(...response.contents);
-            }
-        } else {
-            // No matching required, resolve with all responses
-            pending.resolve(response);
-            pendingMessages.delete(messageId);
-        }
-    } else if (response.status === 'error') {
-        pending.reject(new Error(response.message));
-        pendingMessages.delete(messageId);
+    console.log('Received response for messageId', messageId, ':', response);
+    
+    // Clear timeout and cleanup
+    if (pending.timeoutId) {
+        clearTimeout(pending.timeoutId);
     }
-
-    // Process next message in queue
-    messageQueue.shift();
+    
+    pendingMessages.delete(messageId);
+    messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+    
+    // Resolve the promise
+    pending.resolve(response);
+    
+    // Process next message if any
     processNextMessage();
 }
 
 function handleDiscordMessage(message) {
-    // Skip our own messages (non-bot messages)
     if (!message.isBot) {
-        if (process.env.DEBUG) {
-            console.log('Skipping non-bot message:', {
-                content: message.content,
-                author: message.author
-            });
-        }
         return;
     }
 
-    console.log('\nProcessing Discord message for matches:', {
+    console.log('\nProcessing Discord message:', {
         content: message.content,
-        author: message.author,
-        isBot: message.isBot,
-        isDM: message.isDM
+        author: message.author
     });
 
     // Check all pending messages for matches
-    console.log('Current pending messages:', Array.from(pendingMessages.keys()));
-    
     for (const [messageId, pending] of pendingMessages.entries()) {
-        console.log(`\nChecking messageId ${messageId}:`, {
-            responseMatch: pending.options.responseMatch,
-            startTime: new Date(pending.startTime).toISOString(),
-            responseCount: pending.responses.length
-        });
-
-        // Skip if no responseMatch is required
         if (!pending.options.responseMatch) {
-            console.log('No responseMatch required, skipping');
             continue;
         }
 
-        // Check if message content matches the expected response
         const messageContent = message.content.toLowerCase();
         const responseMatch = pending.options.responseMatch.toLowerCase();
-        console.log('Matching:', {
-            messageContent,
-            responseMatch,
-            includes: messageContent.includes(responseMatch)
-        });
 
         if (messageContent.includes(responseMatch)) {
-            console.log('Found matching Discord response for messageId', messageId);
-            
-            try {
-                // Clear the timeout
-                if (pending.timeoutId) {
-                    console.log('Clearing timeout for messageId', messageId);
-                    clearTimeout(pending.timeoutId);
-                }
+            // Clear timeout and format response
+            if (pending.timeoutId) {
+                clearTimeout(pending.timeoutId);
+            }
 
-                // Format the response nicely
-                const response = {
+            const result = {
+                status: 'success',
+                message: 'Found matching response',
+                response: {
                     text: message.content,
                     author: message.author,
                     isBot: message.isBot,
                     isDM: message.isDM,
                     timestamp: new Date().toISOString(),
                     matched: responseMatch
-                };
+                },
+                elapsedTime: Date.now() - pending.startTime
+            };
 
-                const result = {
-                    status: 'success',
-                    message: 'Found matching response',
-                    response,
-                    elapsedTime: Date.now() - pending.startTime
-                };
-
-                console.log('Resolving promise with result:', result);
-                
-                // Remove from tracking before resolving to prevent race conditions
-                pendingMessages.delete(messageId);
-                messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-                
-                // Resolve the promise
-                pending.resolve(result);
-                console.log('Promise resolved successfully');
-                
-                return;
-            } catch (error) {
-                console.error('Error resolving promise:', error);
-                pending.reject(error);
-                pendingMessages.delete(messageId);
-                return;
-            }
+            // Cleanup and resolve
+            pendingMessages.delete(messageId);
+            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+            pending.resolve(result);
+            
+            // Process next message
+            processNextMessage();
+            return;
         }
 
         // Store response for potential timeout
-        console.log('No match, storing response for later');
         pending.responses.push({
             text: message.content,
             author: message.author,

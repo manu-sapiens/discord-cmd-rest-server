@@ -17,17 +17,84 @@
     let accumulatedResponses = [];
     let accumulationTimer = null;
 
+    function logMessageState(location, action) {
+        console.log(`[STATE:${location}] ${action}:`, {
+            hasCurrentMessage: currentMessage !== null,
+            messageId: currentMessage?.id,
+            messageText: currentMessage?.text,
+            state: currentMessage?.state,
+            age: currentMessage ? Date.now() - currentMessage.startTime : null,
+            hasTimer: accumulationTimer !== null
+        });
+    }
+
+    function clearState(reason) {
+        console.log('[RENDERER] Clearing state:', {
+            reason,
+            hadMessage: currentMessage !== null,
+            messageId: currentMessage?.id,
+            messageState: currentMessage?.state,
+            hadTimer: accumulationTimer !== null,
+            stackTrace: new Error().stack
+        });
+        
+        if (accumulationTimer) {
+            clearTimeout(accumulationTimer);
+            accumulationTimer = null;
+        }
+        currentMessage = null;
+        accumulatedResponses = [];
+    }
+
+    // Verify if current message is stale
+    function isMessageStale() {
+        if (!currentMessage) return false;
+        
+        const timeSinceStart = Date.now() - currentMessage.startTime;
+        const timeout = currentMessage.options.timeout || 5000;
+        
+        // Message is stale if:
+        // 1. It's been processing longer than timeout
+        // 2. It's stuck in waiting_for_echo for more than 5 seconds
+        const isStale = timeSinceStart > timeout || 
+                       (currentMessage.state === 'waiting_for_echo' && timeSinceStart > 5000);
+        
+        if (isStale) {
+            console.warn('[RENDERER] Detected stale message:', {
+                messageId: currentMessage.id,
+                state: currentMessage.state,
+                age: timeSinceStart,
+                timeout
+            });
+        }
+        
+        return isStale;
+    }
+
     // Listen for messages from main process via IPC
     ipcRenderer.receiveMessageFromMain((messageData) => {
         const { messageId, messageText, botUsername, humanUsername, options } = messageData;
-        console.log('[RENDERER] Received message to send:', messageText);
+        console.log('[RENDERER] Received message to send:', {
+            messageId,
+            text: messageText,
+            currentState: {
+                processing: currentMessage !== null,
+                currentMessageId: currentMessage?.id,
+                currentCommand: currentMessage?.text,
+                currentState: currentMessage?.state
+            }
+        });
 
         if (currentMessage) {
             console.error('[RENDERER] A message is already being processed.');
             ipcRenderer.sendResponseToMain(messageId, {
                 status: 'error',
-                message: 'Another command is currently being processed. Please wait for it to complete.',
-                currentCommand: currentMessage.text
+                message: 'Another command is currently being processed.',
+                details: {
+                    currentCommand: currentMessage.text,
+                    currentState: currentMessage.state,
+                    timeRunning: Date.now() - currentMessage.startTime
+                }
             });
             return;
         }
@@ -42,6 +109,12 @@
             startTime: Date.now(),
         };
 
+        // Check for stale state
+        if (currentMessage && isMessageStale()) {
+            console.warn('[RENDERER] Clearing stale state before processing new message');
+            clearState('stale_message_detected');
+        }
+
         // Start processing the message
         sendMessage(currentMessage);
         monitorMessages();
@@ -49,108 +122,79 @@
 
     // Monitor for message confirmation and bot responses
     function monitorMessages() {
-        // Get all messages in the chat
         const messages = document.querySelectorAll('[class*="message__"]');
-        console.log('[RENDERER] Found', messages.length, 'messages');
-
-        // Look at last few messages instead of just the last one
         const lastMessages = Array.from(messages).slice(-3);
         
         if (currentMessage) {
-            console.log('[RENDERER] Current message state:', {
-                text: currentMessage.text,
-                state: currentMessage.state,
-                startTime: new Date(currentMessage.startTime).toISOString(),
-                elapsed: Date.now() - currentMessage.startTime
-            });
-
-            lastMessages.forEach((message, index) => {
+            lastMessages.forEach(message => {
                 const messageContent = message.textContent;
                 const authorElement = message.querySelector(MESSAGE_AUTHOR_SELECTOR);
                 const author = authorElement ? authorElement.textContent.trim() : '';
                 
-                console.log(`[RENDERER] Message [${index}]:`, {
-                    author,
-                    content: messageContent,
-                    authorElement: authorElement ? {
-                        className: authorElement.className,
-                        parentClassName: authorElement.parentElement?.className,
-                        html: authorElement.outerHTML
-                    } : 'not found',
-                    isAvraeMessage: author.includes(AVRAE_USERNAME)
-                });
-
-                // First wait for our message to be sent
                 if (currentMessage.state === 'waiting_for_echo') {
                     if (messageContent.includes(currentMessage.text)) {
-                        console.log('[RENDERER] Found our message in chat');
+                        console.log('[RENDERER] Found our message in chat, transitioning from waiting_for_echo to waiting_for_bot');
                         currentMessage.state = 'waiting_for_bot';
-                        // Reset accumulated responses
                         accumulatedResponses = [];
+                        logMessageState('monitorMessages', 'Message echo found, now waiting for bot');
                     }
                 }
-                // Then collect AVRAE responses
-                else if (currentMessage.state === 'waiting_for_bot') {
-                    if (author.includes(AVRAE_USERNAME)) {
-                        console.log('[RENDERER] Found AVRAE response:', messageContent);
-                        
-                        accumulatedResponses.push({
-                            text: messageContent,
-                            sender: author
-                        });
+                else if (currentMessage.state === 'waiting_for_bot' && author.includes(AVRAE_USERNAME)) {
+                    console.log('[RENDERER] Found bot response while in waiting_for_bot state:', messageContent);
+                    accumulatedResponses.push({
+                        text: messageContent,
+                        sender: author
+                    });
 
-                        // If we have a responseMatch and it matches, send immediately
-                        if (currentMessage.options.responseMatch && 
-                            messageContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
-                            console.log('[RENDERER] Found matching response');
-                            ipcRenderer.sendResponseToMain(currentMessage.id, {
-                                status: 'success',
-                                message: 'Found matching response',
-                                contents: accumulatedResponses
-                            });
-                            currentMessage = null;
-                            accumulationTimer = null;  // Reset the timer
-                            return;
-                        }
-                        
-                        // Otherwise, start/reset accumulation timer
-                        if (accumulationTimer) {
-                            clearTimeout(accumulationTimer);
-                        }
-                        accumulationTimer = setTimeout(() => {
-                            console.log('[RENDERER] Accumulation timeout reached, sending responses:', accumulatedResponses);
-                            ipcRenderer.sendResponseToMain(currentMessage.id, {
-                                status: 'success',
-                                message: 'Received bot responses',
-                                contents: accumulatedResponses
-                            });
-                            currentMessage = null;
-                            accumulationTimer = null;  // Reset the timer
-                        }, ACCUMULATION_TIMEOUT);
+                    // If we have a responseMatch and it matches, send immediately
+                    if (currentMessage.options.responseMatch && 
+                        messageContent.toLowerCase().includes(currentMessage.options.responseMatch.toLowerCase())) {
+                        console.log('[RENDERER] Found matching response, clearing state');
+                        ipcRenderer.sendResponseToMain(currentMessage.id, {
+                            status: 'success',
+                            message: 'Found matching response',
+                            contents: accumulatedResponses
+                        });
+                        clearState('matching_response_found');
+                        return;
                     }
+                    
+                    // Otherwise, start new accumulation timer
+                    if (accumulationTimer) {
+                        console.log('[RENDERER] Clearing existing accumulation timer');
+                        clearTimeout(accumulationTimer);
+                    }
+                    console.log('[RENDERER] Starting new accumulation timer');
+                    accumulationTimer = setTimeout(() => {
+                        console.log('[RENDERER] Accumulation timeout reached, clearing state');
+                        ipcRenderer.sendResponseToMain(currentMessage.id, {
+                            status: 'success',
+                            message: 'Received bot responses',
+                            contents: accumulatedResponses
+                        });
+                        clearState('accumulation_timeout');
+                    }, ACCUMULATION_TIMEOUT);
                 }
             });
         }
 
         // Check timeout
         if (currentMessage && Date.now() - currentMessage.startTime > (currentMessage.options.timeout || 5000)) {
-            console.error('[RENDERER] Message timeout after', Date.now() - currentMessage.startTime, 'ms');
-            if (accumulationTimer) {
-                clearTimeout(accumulationTimer);
-            }
+            console.error('[RENDERER] Message timeout detected');
             ipcRenderer.sendResponseToMain(currentMessage.id, {
                 status: accumulatedResponses.length > 0 ? 'partial' : 'error',
                 message: 'Message timeout - no confirmation received',
                 contents: accumulatedResponses
             });
-            currentMessage = null;
-            accumulationTimer = null;  // Reset the timer
+            clearState('message_timeout');
             return;
         }
 
         // Continue monitoring if message not found
         if (currentMessage) {
             setTimeout(monitorMessages, 100);
+        } else {
+            logMessageState('monitorMessages', 'Monitoring stopped - no current message');
         }
     }
 
@@ -173,7 +217,7 @@
                 status: 'error',
                 message: 'Message box not found'
             });
-            currentMessage = null;
+            clearState('message_box_not_found');
             return;
         }
 
@@ -219,9 +263,13 @@
             console.error('[RENDERER] Error sending message:', error);
             ipcRenderer.sendResponseToMain(message.id, {
                 status: 'error',
-                message: `Error sending message: ${error.message}`
+                message: `Error sending message: ${error.message}`,
+                details: {
+                    messageBoxContent: messageBox.textContent,
+                    expectedText: message.text
+                }
             });
-            currentMessage = null;
+            clearState('error_sending_message');
         }
     }
 
