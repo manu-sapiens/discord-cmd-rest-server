@@ -252,7 +252,14 @@ function handleMessageResponse(messageId, response) {
         pending.timeoutId = null;
     }
 
-    // Send cleanup signal to renderer
+    // Cleanup state
+    pendingMessages.delete(messageId);
+    messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+    
+    // Resolve immediately
+    pending.resolve(response);
+
+    // Send cleanup signal to renderer after resolving
     const mainWindow = getMainWindow();
     if (mainWindow) {
         mainWindow.webContents.send('send-message-to-renderer', {
@@ -264,13 +271,6 @@ function handleMessageResponse(messageId, response) {
         });
     }
 
-    // Cleanup state
-    pendingMessages.delete(messageId);
-    messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-    
-    // Resolve the promise
-    pending.resolve(response);
-    
     // Process next message if any
     processNextMessage();
 }
@@ -321,7 +321,14 @@ function handleDiscordMessage(message) {
                 elapsedTime: Date.now() - pending.startTime
             };
 
-            // Send cleanup signal to renderer
+            // Cleanup state
+            pendingMessages.delete(messageId);
+            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
+            
+            // Resolve immediately for success case
+            pending.resolve(result);
+            
+            // Send cleanup signal to renderer after resolving
             const mainWindow = getMainWindow();
             if (mainWindow) {
                 mainWindow.webContents.send('send-message-to-renderer', {
@@ -333,16 +340,8 @@ function handleDiscordMessage(message) {
                 });
             }
 
-            // Cleanup state
-            pendingMessages.delete(messageId);
-            messageQueue = messageQueue.filter(m => m.messageId !== messageId);
-            
-            // Resolve after a small delay to ensure cleanup is processed
-            setTimeout(() => {
-                pending.resolve(result);
-                // Process next message
-                processNextMessage();
-            }, POST_RESOLVE_TIMEOUT);
+            // Process next message
+            processNextMessage();
             
             return;
         }
