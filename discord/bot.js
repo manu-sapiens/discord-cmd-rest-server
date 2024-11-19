@@ -33,27 +33,9 @@ class DiscordBot extends EventEmitter {
     setupEventHandlers() {
         console.log('Setting up Discord bot event handlers...');
 
-        // Debug: Log all raw events with full data for deletes
-        this.client.on('raw', event => {
-            if (event.t === 'MESSAGE_DELETE') {
-                console.log('Message Delete event details:', {
-                    id: event.d?.id,
-                    channelId: event.d?.channel_id,
-                    guildId: event.d?.guild_id,
-                    fullData: event.d
-                });
-            } else if (event.t !== 'MESSAGE_CREATE') { // Skip MESSAGE_CREATE as we handle it separately
-                console.log('Raw event received:', {
-                    type: event.t,
-                    channelId: event.d?.channel_id,
-                    channelType: event.d?.channel_type,
-                    author: event.d?.author?.username
-                });
-            }
-        });
-
-        // Handle all message events through messageCreate
+        // Handle message events
         this.client.on('messageCreate', async message => {
+            // Log incoming message
             console.log('MessageCreate event:', {
                 content: message.content,
                 channelType: message.channel.type,
@@ -68,8 +50,8 @@ class DiscordBot extends EventEmitter {
                 return;
             }
 
-            const isDM = message.channel.type === ChannelType.DM;
             const isFromActiveChannel = message.channelId === this.activeChannelId;
+            const isDM = message.channel.type === ChannelType.DM;
             const isFromAvrae = message.author.username === 'Avrae';
 
             // If it's a DM from Avrae, store the channel ID
@@ -89,19 +71,34 @@ class DiscordBot extends EventEmitter {
             // 1. From the active channel, or
             // 2. DMs from Avrae
             if (isFromActiveChannel || (isDM && isFromAvrae)) {
-                const messageData = {
+                this.emit('message', {
                     content: message.content,
                     author: message.author.username,
-                    discriminator: `${message.author.username}#${message.author.discriminator}`,
+                    discriminator: message.author.tag,
                     channelId: message.channelId,
                     isBot: message.author.bot,
                     isDM: isDM,
                     isActiveChannel: isFromActiveChannel,
                     embeds: message.embeds
-                };
+                });
+            }
 
-                console.log('Discord service: Message event received:', messageData);
-                this.emit('message', messageData);
+            // Only handle $start command here
+            if (message.content.trim() === '$start') {
+
+                this.activeChannelId = message.channelId;
+                this.activeChannel = message.channel;
+                this.emit('channelInitialized', {
+                    channelId: message.channelId,
+                    channelName: message.channel.name,
+                    channelType: message.channel.type,
+                    guildId: message.guild?.id,
+                    guildName: message.guild?.name,
+                    botId: this.client.user.id,
+                    botName: this.client.user.tag
+                });
+                setAutomationStarted(true);
+                await message.reply('Discord automation initialized in this channel.');
             }
         });
 
@@ -124,27 +121,6 @@ class DiscordBot extends EventEmitter {
             );
             
             this.emit('ready');
-        });
-
-        // Keep MessageCreate for initialization command only
-        this.client.on(Events.MessageCreate, async (message) => {
-            // Only handle $start command here
-            if (message.content.trim() === '$start') {
-
-                this.activeChannelId = message.channelId;
-                this.activeChannel = message.channel;
-                this.emit('channelInitialized', {
-                    channelId: message.channelId,
-                    channelName: message.channel.name,
-                    channelType: message.channel.type,
-                    guildId: message.guild?.id,
-                    guildName: message.guild?.name,
-                    botId: this.client.user.id,
-                    botName: this.client.user.tag
-                });
-                setAutomationStarted(true);
-                await message.reply('Discord automation initialized in this channel.');
-            }
         });
 
         this.client.on(Events.Error, (error) => {

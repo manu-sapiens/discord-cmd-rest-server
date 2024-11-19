@@ -91,97 +91,111 @@ class CommandProcessor extends EventEmitter {
     }
 
     handleDiscordMessage(message) {
-        if (this.state === STATES.PROCESSING) {
-            console.log('Received Discord message while processing:', message);
+        if (this.state !== STATES.PROCESSING) {
+            return;
+        }
+
+        // Track seen messages to prevent duplicates
+        const messageKey = `${message.author}-${message.content}-${JSON.stringify(message.embeds)}`;
+        if (this.seenMessages && this.seenMessages.has(messageKey)) {
+            return;
+        }
+
+        console.log('Processing Discord message:', message);
             
-            const isBotUser = message.author === this.botUsername;
-            const originalMessage = message.content.trim();
-            const simplifiedMessage = originalMessage.toLowerCase();
+        const isBotUser = message.author === this.botUsername;
+        const originalMessage = message.content.trim();
+        const simplifiedMessage = originalMessage.toLowerCase();
 
-            if (isBotUser) {
-                // Clear initial timeout on first bot response
-                if (!this.gotBotResponse) {
-                    this.gotBotResponse = true;
-                    if (this.initialTimeout) {
-                        clearTimeout(this.initialTimeout);
-                        this.initialTimeout = null;
-                    }
+        if (isBotUser) {
+            // Add message to seen set
+            if (!this.seenMessages) {
+                this.seenMessages = new Set();
+            }
+            this.seenMessages.add(messageKey);
+
+            // Clear initial timeout on first bot response
+            if (!this.gotBotResponse) {
+                this.gotBotResponse = true;
+                if (this.initialTimeout) {
+                    clearTimeout(this.initialTimeout);
+                    this.initialTimeout = null;
                 }
+            }
 
-                // Reset accumulation timeout
-                if (this.accumulationTimeout) {
-                    clearTimeout(this.accumulationTimeout);
-                }
-                
-                // Store message
-                this.accumulatedMessages.push({
-                    sender: this.botUsername,
-                    text: originalMessage,
-                    embeds: message.embeds || []
-                });
+            // Reset accumulation timeout
+            if (this.accumulationTimeout) {
+                clearTimeout(this.accumulationTimeout);
+            }
+            
+            // Store message
+            this.accumulatedMessages.push({
+                sender: this.botUsername,
+                text: originalMessage,
+                embeds: message.embeds || []
+            });
 
-                // Check for pattern matches if we have patterns
-                if (this.patterns && this.patterns.length > 0) {
-                    // Look for pattern matches
-                    for (let i = 0; i < this.patterns.length; i++) {
-                        const pattern = this.patterns[i];
-                        const normalized = pattern.trim().toLowerCase();
-                        
-                        // Check message content
-                        if (simplifiedMessage.includes(normalized)) {
+            // Check for pattern matches if we have patterns
+            if (this.patterns && this.patterns.length > 0) {
+                // Look for pattern matches
+                for (let i = 0; i < this.patterns.length; i++) {
+                    const pattern = this.patterns[i];
+                    const normalized = pattern.trim().toLowerCase();
+                    
+                    // Check message content
+                    if (simplifiedMessage.includes(normalized)) {
 
-                            const origin  = `\nMatched pattern: ${pattern} with message: ${originalMessage}`
-                            const success_result = {
-                                status: 'success',
-                                elapsedTime: Date.now() - this.startTime,
-                                match: pattern,
-                                text: originalMessage,
-                                embeds: message.embeds || [],            
-                                contents: this.accumulatedMessages,
-                                origin: origin
-                            }
-
-                            console.log(origin);
-                            console.log(`\nResponse: ${JSON.stringify(success_result)}`);
-
-                            this.resolveCurrentProcessing(success_result);
-                            return;
+                        const origin  = `\nMatched pattern: ${pattern} with message: ${originalMessage}`
+                        const success_result = {
+                            status: 'success',
+                            elapsedTime: Date.now() - this.startTime,
+                            match: pattern,
+                            text: originalMessage,
+                            embeds: message.embeds || [],            
+                            contents: this.accumulatedMessages,
+                            origin: origin
                         }
-                        
-                        // Check embeds
-                        if (message.embeds && message.embeds.length > 0) {
-                            for (const embed of message.embeds) {
-                                const embedText = [
-                                    embed.title || '',
-                                    embed.description || '',
-                                    ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`)
-                                ]
-                                .filter(text => text) // Remove empty strings
-                                .join(' ')
-                                .toLowerCase()
-                                .replace(/[^\w\s]/g, '') // Remove special characters
-                                .replace(/\s+/g, ' ')    // Normalize whitespace
-                                .trim();
-                                
-                                if (embedText.includes(normalized)) {
 
-                                    const origin  = `\nMatched pattern: ${pattern} with embed: ${embedText}`
-                                    const success_result = {
-                                        status: 'success',
-                                        elapsedTime: Date.now() - this.startTime,
-                                        match: pattern,
-                                        text: embedText,
-                                        embeds: [embed],
-                                        contents: this.accumulatedMessages,
-                                        origin: origin
-                                    }
+                        console.log(origin);
+                        console.log(`\nResponse: ${JSON.stringify(success_result)}`);
 
-                                    console.log(origin);
-                                    console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+                        this.resolveCurrentProcessing(success_result);
+                        return;
+                    }
+                    
+                    // Check embeds
+                    if (message.embeds && message.embeds.length > 0) {
+                        for (const embed of message.embeds) {
+                            const embedText = [
+                                embed.title || '',
+                                embed.description || '',
+                                ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`)
+                            ]
+                            .filter(text => text) // Remove empty strings
+                            .join(' ')
+                            .toLowerCase()
+                            .replace(/[^\w\s]/g, '') // Remove special characters
+                            .replace(/\s+/g, ' ')    // Normalize whitespace
+                            .trim();
+                            
+                            if (embedText.includes(normalized)) {
 
-                                    this.resolveCurrentProcessing(success_result);
-                                    return;
+                                const origin  = `\nMatched pattern: ${pattern} with embed: ${embedText}`
+                                const success_result = {
+                                    status: 'success',
+                                    elapsedTime: Date.now() - this.startTime,
+                                    match: pattern,
+                                    text: embedText,
+                                    embeds: [embed],
+                                    contents: this.accumulatedMessages,
+                                    origin: origin
                                 }
+
+                                console.log(origin);
+                                console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+
+                                this.resolveCurrentProcessing(success_result);
+                                return;
                             }
                         }
                     }
@@ -195,22 +209,22 @@ class CommandProcessor extends EventEmitter {
                             contents: this.accumulatedMessages
                         });
                     }, ACCUMULATION_TIMEOUT);
-                } else {
-                    // No patterns to match, resolve after accumulation timeout
-                    this.accumulationTimeout = setTimeout(() => {
-                        const origin = `\nNo patterns to match, resolving after accumulation timeout`
-                        const success_result = {
-                            status: 'success',
-                            elapsedTime: Date.now() - this.startTime,
-                            contents: this.accumulatedMessages,
-                            origin: origin
-                        }
-                        console.log(origin);
-                        console.log(`\nResponse: ${JSON.stringify(success_result)}`);
-
-                        this.resolveCurrentProcessing(success_result);
-                    }, ACCUMULATION_TIMEOUT);
                 }
+            } else {
+                // No patterns to match, resolve after accumulation timeout
+                this.accumulationTimeout = setTimeout(() => {
+                    const origin = `\nNo patterns to match, resolving after accumulation timeout`
+                    const success_result = {
+                        status: 'success',
+                        elapsedTime: Date.now() - this.startTime,
+                        contents: this.accumulatedMessages,
+                        origin: origin
+                    }
+                    console.log(origin);
+                    console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+
+                    this.resolveCurrentProcessing(success_result);
+                }, ACCUMULATION_TIMEOUT);
             }
         }
     }
@@ -236,20 +250,15 @@ class CommandProcessor extends EventEmitter {
         this.messageText = null;
         this.botUsername = null;
         this.humanUsername = null;
-        this.patterns = [];
         this.startTime = null;
         this.accumulatedMessages = [];
+        this.patterns = null;
         this.gotBotResponse = false;
         this.resolve = null;
         this.reject = null;
-        if (this.initialTimeout) {
-            clearTimeout(this.initialTimeout);
-            this.initialTimeout = null;
-        }
-        if (this.accumulationTimeout) {
-            clearTimeout(this.accumulationTimeout);
-            this.accumulationTimeout = null;
-        }
+        this.initialTimeout = null;
+        this.accumulationTimeout = null;
+        this.seenMessages = null;
     }
 
     async deliverToRenderer(message) {
