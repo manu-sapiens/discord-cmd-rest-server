@@ -167,6 +167,7 @@ class CommandProcessor extends EventEmitter {
                     if (message.embeds && message.embeds.length > 0) {
                         for (const embed of message.embeds) {
                             const embedText = [
+                                embed.author?.name || '',  // Include author name
                                 embed.title || '',
                                 embed.description || '',
                                 ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`)
