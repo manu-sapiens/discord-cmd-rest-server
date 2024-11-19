@@ -116,7 +116,8 @@ class CommandProcessor extends EventEmitter {
                 // Store message
                 this.accumulatedMessages.push({
                     sender: this.botUsername,
-                    text: originalMessage
+                    text: originalMessage,
+                    embeds: message.embeds || []
                 });
 
                 // Check for pattern matches if we have patterns
@@ -125,8 +126,9 @@ class CommandProcessor extends EventEmitter {
                     for (let i = 0; i < this.patterns.length; i++) {
                         const pattern = this.patterns[i];
                         const normalized = pattern.trim().toLowerCase();
+                        
+                        // Check message content
                         if (simplifiedMessage.includes(normalized)) {
-                            // Found a match! Resolve with success
                             this.resolveCurrentProcessing({
                                 status: 'success',
                                 elapsedTime: Date.now() - this.startTime,
@@ -134,6 +136,33 @@ class CommandProcessor extends EventEmitter {
                                 contents: this.accumulatedMessages
                             });
                             return;
+                        }
+                        
+                        // Check embeds
+                        if (message.embeds && message.embeds.length > 0) {
+                            for (const embed of message.embeds) {
+                                const embedText = [
+                                    embed.title || '',
+                                    embed.description || '',
+                                    ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`)
+                                ]
+                                .filter(text => text) // Remove empty strings
+                                .join(' ')
+                                .toLowerCase()
+                                .replace(/[^\w\s]/g, '') // Remove special characters
+                                .replace(/\s+/g, ' ')    // Normalize whitespace
+                                .trim();
+                                
+                                if (embedText.includes(normalized)) {
+                                    this.resolveCurrentProcessing({
+                                        status: 'success',
+                                        elapsedTime: Date.now() - this.startTime,
+                                        matchIndex: i,
+                                        contents: this.accumulatedMessages
+                                    });
+                                    return;
+                                }
+                            }
                         }
                     }
 
