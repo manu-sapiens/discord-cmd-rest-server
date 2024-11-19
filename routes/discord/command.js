@@ -1,17 +1,18 @@
-// routes/command.js
+// routes/discord/command.js
 // --------------------------------
 const express = require('express');
 // --------------------------------
-const { enqueueMessage } = require('../../utils/queueProcessor'); // Enqueue helper
+const commandProcessor = require('../../utils/commandProcessor');
 const { getAutomationStarted } = require('../../state');
+const { getInstance: getDiscordService } = require('../../discord/service');
 // --------------------------------
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { message, botUsername, humanUsername, commandPrefix = '!' } = req.body;
+  const { message, botUsername, humanUsername, patterns } = req.body;
 
-  if (!getAutomationStarted) {
+  if (!getAutomationStarted()) {
     return res.status(400).send("[send-command][400] Automation not started. Please start automation via the Menu.");
   }
 
@@ -19,17 +20,23 @@ router.post('/', async (req, res) => {
     return res.status(400).send("[send-command][400] Message, botUsername, and humanUsername are required.");
   }
 
-  // Ensure the message starts with the command prefix
-  // let commandMessage = message.startsWith(commandPrefix) ? message : commandPrefix + message;
-  // Actually, let the user do that - more flexible this way
-
-  // Enqueue the command and expect a bot response
   try {
-    const response = await enqueueMessage(commandMessage, botUsername, humanUsername, { expectBotResponse: true, expectEcho: false });
+    console.log("=================== [send-command] ===================");
+    console.log(`[send-command] req = ${JSON.stringify(req.body)}`);
+    console.log(`[send-command] Processing command: ${message}, botUsername: ${botUsername}, humanUsername: ${humanUsername}`);
+    
+    // Get the singleton Discord service instance
+    const discordService = getDiscordService();
+    
+    // Ensure command processor has the Discord service
+    commandProcessor.setDiscordService(discordService);
+    
+    const response = await commandProcessor.processCommand(message, botUsername, humanUsername, patterns);
+    console.log(`[send-command] Response: ${JSON.stringify(response)}`);
     res.json({ response });
   } catch (error) {
-    console.error("Error sending command:", error);
-    res.status(500).send(`[send-command][500] Failed to send command: ${error}`);
+    console.error("Error processing command:", error);
+    res.status(500).send(`[send-command][500] Failed to process command: ${error}`);
   }
 });
 

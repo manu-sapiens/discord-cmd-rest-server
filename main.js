@@ -5,19 +5,35 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { getMainWindow, setMainWindow } = require('./utils/windowManager');
 const { createImageViewerWindow } = require('./utils/imageViewerManager');
+const { initialize: initializeDiscordService } = require('./discord/service');
+require('dotenv').config();
 
-// Routes
+// Initialize Express server
+const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
+const server = express();
+server.use(bodyParser.json());
+
+// Initialize Discord Service
+const botToken = process.env.DISCORD_BOT_TOKEN;
+if (!botToken || botToken === 'your_bot_token_here') {
+    console.error('Discord bot token not configured. Please set DISCORD_BOT_TOKEN in .env file.');
+    app.quit();
+    return;
+}
+
+console.log('Initializing Discord service...');
+initializeDiscordService(botToken).catch(error => {
+    console.error('Failed to initialize Discord service:', error);
+    app.quit();
+});
+
+// Routes (after Discord service initialization)
 const roomRoute = require('./routes/places/room');
 const modificationRoute = require('./routes/places/modifications');
 const dungeonRoute = require('./routes/places/dungeon');
 const messageRoute = require('./routes/discord/message');
 const commandRoute = require('./routes/discord/command');
 const healthRoute = require('./routes/health');
-
-// Initialize Express server
-const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
-const server = express();
-server.use(bodyParser.json());
 
 // Register routes
 server.use('/places/rooms', roomRoute);
@@ -95,16 +111,6 @@ app.whenReady().then(() => {
         {
             label: 'Automation',
             submenu: [
-                {
-                    label: 'Start Automation',
-                    click: function () {
-                        console.log("Starting automation...");
-                        const win = getMainWindow();
-                        if (win) {
-                            win.webContents.send('start-automation');
-                        }
-                    }
-                },
                 {
                     label: 'Toggle DevTools',
                     accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I',

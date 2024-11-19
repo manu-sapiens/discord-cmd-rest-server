@@ -10,6 +10,7 @@ const rl = readline.createInterface({
 const DISCORD_AUTOMATION_SERVER_PORT = 3037;
 const DISCORD_AUTOMATION_URL = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}/discord`;
 const DISCORD_AUTOMATION_MESSAGE_ENDPOINT = `${DISCORD_AUTOMATION_URL}/message`;
+const DISCORD_AUTOMATION_COMMAND_ENDPOINT = `${DISCORD_AUTOMATION_URL}/command`;
 
 let botUsername = 'Avrae';
 let humanUsername = 'manu_mercs';
@@ -57,7 +58,7 @@ async function getChannelInfo() {
     }
 }
 
-async function sendMessage(messageText) {
+async function sendCommand(messageText) {
     try {
         // Split the input to separate command from patterns
         const [command, ...patterns] = messageText.split('|');
@@ -67,13 +68,42 @@ async function sendMessage(messageText) {
             message: trimmedCommand,
             botUsername,  
             humanUsername,
-            useBot: !trimmedCommand.startsWith('!'),
-            options: {
-                expectBotResponse: true,
-                expectEcho: true,  // Keep echo detection for state machine
-                responseMatch: patterns.length > 0 ? patterns.map(p => p.trim()) : null,
-                timeout: 20000
-            }
+            patterns: patterns.length > 0 ? patterns.map(p => p.trim()) : []
+        };
+
+        console.log('\nSending POST request to:', DISCORD_AUTOMATION_COMMAND_ENDPOINT);
+        console.log('Payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch(DISCORD_AUTOMATION_COMMAND_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        console.log('\nResponse status:', response.status);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        }
+
+        const data = await response.json();
+        console.log('\nReceived response:', JSON.stringify(data, null, 2));
+        handleResponse(data);
+        return data;
+    } catch (error) {
+        console.error('\nError sending command:', error);
+        throw error;
+    }
+}
+
+async function sendMessage(messageText) {
+    try {
+        const payload = {
+            message: messageText.trim(),
+            botUsername,  
+            humanUsername
         };
 
         console.log('\nSending POST request to:', DISCORD_AUTOMATION_MESSAGE_ENDPOINT);
@@ -105,46 +135,79 @@ async function sendMessage(messageText) {
 
 function handleResponse(data) {
     if (!data) {
-        console.warn("Empty response received");
+        console.log('No data received');
         return;
     }
-
-    console.log('\nProcessing response:', JSON.stringify(data, null, 2));
 
     if (data.error) {
-        console.error("Error:", data.error);
+        console.error('Error:', data.error);
         return;
     }
 
-    if (data.response) {
-        console.log("\nBot response:", data.response.text);
-        console.log("Response time:", data.elapsedTime, "ms");
+    if (data.contents) {
+        printContents(data.contents);
     }
+}
 
-    if (data.status === 'timeout') {
-        console.log("Operation timed out waiting for bot response");
-    } else if (data.status === 'success') {
-        console.log("Successfully received bot response");
-    }
+function printContents(contents) {
+    contents.forEach((content, index) => {
+        console.log(`\nResponse #${index + 1} from ${content.sender}:`);
+        
+        if (content.text) {
+            console.log('Text:', content.text);
+        }
+        
+        if (content.embed) {
+            console.log('---- Embed ----');
+            if (Array.isArray(content.embed)) {
+                content.embed.forEach((line, i) => {
+                    console.log(`| Line ${i + 1}: ${line}`);
+                });
+            } else {
+                console.log(content.embed);
+            }
+            console.log('-------------');
+        }
+    });
 }
 
 function promptUser() {
     rl.question('> ', async (input) => {
-        if (input.toLowerCase() === '$quit') {
-            console.log('Goodbye!');
-            process.exit(0);
-        } else if (input.toLowerCase() === '$help') {
-            printHelp();
-        } else if (input.toLowerCase() === '$info') {
-            await getChannelInfo();
-        } else if (input.toLowerCase().startsWith('$botname ')) {
-            botUsername = input.slice(9);
-            console.log(`Bot username set to: ${botUsername}`);
-        } else if (input.toLowerCase().startsWith('$username ')) {
-            humanUsername = input.slice(10);
-            console.log(`Human username set to: ${humanUsername}`);
-        } else {
-            await sendMessage(input);
+        try {
+            if (input.toLowerCase() === '$quit') {
+                console.log('Goodbye!');
+                process.exit(0);
+            } else if (input.toLowerCase() === '$help') {
+                printHelp();
+            } else if (input.toLowerCase() === '$info') {
+                await getChannelInfo();
+            } else if (input.toLowerCase().startsWith('$botname ')) {
+                botUsername = input.slice(9);
+                console.log(`Bot username set to: ${botUsername}`);
+            } else if (input.toLowerCase().startsWith('$username ')) {
+                humanUsername = input.slice(10);
+                console.log(`Human username set to: ${humanUsername}`);
+            } else if (input.startsWith('!')) {
+                try {
+                    await sendCommand(input);
+                } catch (error) {
+                    console.error('\nError executing command:', error.message);
+                    if (error.response) {
+                        console.error('Server response:', await error.response.text());
+                    }
+                }
+            } else if (!input.startsWith('$')) {
+                try {
+                    await sendMessage(input);
+                } catch (error) {
+                    console.error('\nError sending message:', error.message);
+                    if (error.response) {
+                        console.error('Server response:', await error.response.text());
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('\nUnexpected error:', error.message);
         }
         promptUser();
     });
@@ -153,7 +216,20 @@ function promptUser() {
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
     console.log('\nGoodbye!');
+    rl.close();
     process.exit(0);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+    console.error('\nUncaught error:', error);
+    console.log('\nRecovering and continuing...');
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (error) => {
+    console.error('\nUnhandled promise rejection:', error);
+    console.log('\nRecovering and continuing...');
 });
 
 process.on('exit', () => {

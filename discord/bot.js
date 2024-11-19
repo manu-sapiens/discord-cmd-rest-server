@@ -1,5 +1,6 @@
 const { Client, Events, GatewayIntentBits, ChannelType, Partials } = require('discord.js');
 const { EventEmitter } = require('events');
+const { setAutomationStarted } = require('../state');
 
 class DiscordBot extends EventEmitter {
     constructor(token) {
@@ -154,7 +155,8 @@ class DiscordBot extends EventEmitter {
                     // Emit message event with full data
                     this.emit('message', {
                         content: data.content,
-                        author: `${data.author.username}#${data.author.discriminator}`,
+                        author: `${data.author.username}`,
+                        discriminator: `${data.author.username}#${data.author.discriminator}`,
                         channelId: data.channel_id,
                         isBot: data.author.bot,
                         isDM: isDM,
@@ -191,6 +193,7 @@ class DiscordBot extends EventEmitter {
         this.client.on(Events.MessageCreate, async (message) => {
             // Only handle $start command here
             if (message.content.trim() === '$start') {
+
                 this.activeChannelId = message.channelId;
                 this.activeChannel = message.channel;
                 this.emit('channelInitialized', {
@@ -202,6 +205,7 @@ class DiscordBot extends EventEmitter {
                     botId: this.client.user.id,
                     botName: this.client.user.tag
                 });
+                setAutomationStarted(true);
                 await message.reply('Discord automation initialized in this channel.');
             }
         });

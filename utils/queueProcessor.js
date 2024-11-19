@@ -1,61 +1,99 @@
 // utils/queueProcessor.js
 // --------------------------------
 const { ipcMain } = require('electron');
+const { EventEmitter } = require('events');
 const { getMainWindow } = require('./windowManager');
 const { updateMap, updateOtherImage } = require('./imageViewerManager');
 // --------------------------------
 
 const POST_RESOLVE_TIMEOUT = 5000; // 5 seconds for cleanup
 
+// Message queue state
 let messageQueue = [];
 let isProcessing = false;
-let pendingMessages = new Map();
+const messageEmitter = new EventEmitter();
 
-function enqueueMessage({ messageText, botUsername, humanUsername, options }) {
+class PendingMessage {
+    constructor(options) {
+        this.options = options;
+        this.responses = [];
+        this.startTime = Date.now();
+        this.accumulator = [];
+    }
+}
+
+const pendingMessages = new Map();
+
+function createMessageEntry(messageText, botUsername, humanUsername, options) {
+    const messageId = Date.now() + Math.random();
+    
+    return {
+        messageId,
+        messageText,
+        botUsername,
+        humanUsername,
+        options,
+        startTime: Date.now()
+    };
+}
+
+async function addToPendingMessages(messageId, options) {
+    const pendingMessage = new PendingMessage(options);
+    pendingMessages.set(messageId, pendingMessage);
+    
+    console.log('Stored pending message:', {
+        messageId,
+        options,
+        pendingCount: pendingMessages.size
+    });
+}
+
+async function waitForResponse(messageId) {
+    const pendingEntry = pendingMessages.get(messageId);
+    if (!pendingEntry) {
+        throw new Error(`No pending entry found for messageId: ${messageId}`);
+    }
+
+    const response = await new Promise((resolve) => {
+        messageEmitter.once(`response:${messageId}`, resolve);
+    });
+    
+    return response;
+}
+
+async function enqueueMessage(messageText, botUsername, humanUsername, options) {
     console.log('\nEnqueueing message with options:', {
         messageText,
         botUsername,
         humanUsername,
         options
     });
+
+    // Create message entry
+    const entry = createMessageEntry(messageText, botUsername, humanUsername, options);
     
-    return new Promise((resolve, reject) => {
-        const messageId = Date.now() + Math.random();
-        console.log('Generated messageId:', messageId);
-        
-        // Store the promise callbacks and options with the message ID
-        pendingMessages.set(messageId, {
-            resolve,
-            reject,
-            options,
-            responses: [], // Store accumulated bot responses
-            startTime: Date.now(),
-            accumulator: [] // Initialize accumulator
-        });
-
-        console.log('Stored pending message with options:', {
-            messageId,
-            options,
-            pendingCount: pendingMessages.size
-        });
-
-        messageQueue.push({
-            messageId,
-            messageText,
-            botUsername,
-            humanUsername,
-            options
-        });
-
+    // Add to pending messages
+    await addToPendingMessages(entry.messageId, options);
+    
+    // Add to queue
+    messageQueue.push(entry);
+    
+    try {
         // Start processing if not already running
         if (!isProcessing) {
-            processNextMessage();
+            await processNextMessage();
         }
-    });
+        
+        // Wait for response
+        const response = await waitForResponse(entry.messageId);
+        return response;
+    } catch (error) {
+        console.error('Error processing message:', error);
+        throw error;
+    }
 }
 
-// Manage the message queue
-function processNextMessage() {
+async function processNextMessage() {
     if (messageQueue.length === 0) {
         isProcessing = false;
         return;
@@ -66,7 +104,8 @@ function processNextMessage() {
     
     try {
         // Attempt to deliver the message
-        if (!deliverMessage(message)) {
+        const delivered = await deliverMessage(message);
+        if (!delivered) {
             console.error(`[CRITICAL] Message delivery failed for message ID ${message.messageId}:`, {
                 text: message.messageText,
                 user: message.humanUsername,
@@ -74,7 +113,7 @@ function processNextMessage() {
                 timestamp: new Date().toISOString()
             });
 
-            // Notify the user about the failure
+            // Notify about the failure
             const errorResponse = {
                 status: 'error',
                 message: 'Failed to deliver message - Discord window not available',
@@ -85,18 +124,13 @@ function processNextMessage() {
                 }
             };
 
-            // Try to resolve the message promise with error
-            const pending = pendingMessages.get(message.messageId);
-            if (pending) {
-                pending.resolve(errorResponse);
-                pendingMessages.delete(message.messageId);
-            }
+            // Emit error response
+            messageEmitter.emit(`response:${message.messageId}`, errorResponse);
 
             // Remove failed message and try next one
             console.warn(`[QUEUE] Removing failed message from queue. ${messageQueue.length - 1} messages remaining`);
             messageQueue.shift();
-            processNextMessage();
-            return;
+            await processNextMessage();
         }
     } catch (error) {
         console.error('[CRITICAL] Unexpected error in message processing:', {
@@ -106,7 +140,7 @@ function processNextMessage() {
             text: message.messageText
         });
 
-        // Handle the error similarly to delivery failure
+        // Handle the error
         const errorResponse = {
             status: 'error',
             message: 'Unexpected error in message processing',
@@ -118,24 +152,20 @@ function processNextMessage() {
             }
         };
 
-        const pending = pendingMessages.get(message.messageId);
-        if (pending) {
-            pending.resolve(errorResponse);
-            pendingMessages.delete(message.messageId);
-        }
+        // Emit error response
+        messageEmitter.emit(`response:${message.messageId}`, errorResponse);
 
         messageQueue.shift();
-        processNextMessage();
+        await processNextMessage();
     }
 }
 
-// Handle the actual message delivery
-function deliverMessage(message) {
+async function deliverMessage(message) {
     const mainWindow = getMainWindow();
     if (!mainWindow) {
-        console.error('[CRITICAL] Main window not available for message delivery:', {
+        console.error('[CRITICAL] Main window not available:', {
             messageId: message.messageId,
-            windowState: 'NOT_AVAILABLE',
+            windowState: 'NO_WINDOW',
             timestamp: new Date().toISOString()
         });
         return false;
@@ -170,7 +200,7 @@ function deliverMessage(message) {
     }
 }
 
-function handleMessageResponse(messageId, response) {
+async function handleMessageResponse(messageId, response) {
     const pending = pendingMessages.get(messageId);
     if (!pending) {
         console.log('[MAIN:DEBUG] No pending message found for messageId', messageId);
@@ -184,17 +214,16 @@ function handleMessageResponse(messageId, response) {
         responseMatch: pending.options.responseMatch
     });
     
-    // If we're just starting to receive responses, clear the timeout and set a shorter one
-    if (response.status === 'receiving_responses') {
-        console.log('[MAIN:DEBUG] Bot started responding, handling timeouts:', {
-            messageId,
-            timeFromStart: Date.now() - pending.startTime,
-        });
-
-        return;
-    }
+    // // If we're just starting to receive responses, just log it
+    // if (response.status === 'receiving_responses') {
+    //     console.log('[MAIN:DEBUG] Bot started responding:', {
+    //         messageId,
+    //         timeFromStart: Date.now() - pending.startTime,
+    //     });
+    //     return;
+    // }
     
-    // Clear timeout and cleanup
+    // Process final response
     console.log('[MAIN:DEBUG] Processing final response:', {
         messageId,
         status: response.status,
@@ -206,10 +235,10 @@ function handleMessageResponse(messageId, response) {
     pendingMessages.delete(messageId);
     messageQueue = messageQueue.filter(m => m.messageId !== messageId);
     
-    // Resolve immediately
-    pending.resolve(response);
+    // Emit response event
+    messageEmitter.emit(`response:${messageId}`, response);
 
-    // Send cleanup signal to renderer after resolving
+    // Send cleanup signal to renderer
     const mainWindow = getMainWindow();
     if (mainWindow) {
         console.log('[MAIN:DEBUG] Sending cleanup signal to renderer');
@@ -223,7 +252,7 @@ function handleMessageResponse(messageId, response) {
     }
 
     // Process next message
-    processNextMessage();
+    await processNextMessage();
 }
 
 function handleDiscordMessage(message) {
