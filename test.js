@@ -144,6 +144,28 @@ function handleResponse(data) {
         return;
     }
 
+    if (data.match) {
+        console.log('\nPattern matched:', data.match);
+        if (data.text) {
+            console.log('Matching message:', data.text);
+        }
+        if (data.embeds) {
+            console.log('Matching embeds:');
+            data.embeds.forEach((embed, i) => {
+                console.log(`\nEmbed #${i + 1}:`);
+                if (embed.title) console.log('Title:', embed.title);
+                if (embed.description) console.log('Description:', embed.description);
+                if (embed.fields) {
+                    console.log('Fields:');
+                    embed.fields.forEach(field => {
+                        console.log(`- ${field.name}: ${field.value}`);
+                    });
+                }
+            });
+        }
+        console.log('\nAll messages received:');
+    }
+
     if (data.contents) {
         printContents(data.contents);
     }
@@ -157,16 +179,19 @@ function printContents(contents) {
             console.log('Text:', content.text);
         }
         
-        if (content.embed) {
-            console.log('---- Embed ----');
-            if (Array.isArray(content.embed)) {
-                content.embed.forEach((line, i) => {
-                    console.log(`| Line ${i + 1}: ${line}`);
-                });
-            } else {
-                console.log(content.embed);
-            }
-            console.log('-------------');
+        if (content.embeds) {
+            content.embeds.forEach((embed, i) => {
+                console.log(`\n---- Embed #${i + 1} ----`);
+                if (embed.title) console.log('Title:', embed.title);
+                if (embed.description) console.log('Description:', embed.description);
+                if (embed.fields) {
+                    console.log('Fields:');
+                    embed.fields.forEach(field => {
+                        console.log(`- ${field.name}: ${field.value}`);
+                    });
+                }
+                console.log('------------------');
+            });
         }
     });
 }

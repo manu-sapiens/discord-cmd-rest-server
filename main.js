@@ -63,10 +63,6 @@ function createWindow() {
 
     setMainWindow(win);
 
-    // Initialize queue processor
-    const { initializeQueueProcessor } = require('./utils/queueProcessor');
-    initializeQueueProcessor();
-
     // Create image viewer window
     createImageViewerWindow();
 

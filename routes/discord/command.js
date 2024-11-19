@@ -33,8 +33,12 @@ router.post('/', async (req, res) => {
     
     const response = await commandProcessor.processCommand(message, botUsername, humanUsername, patterns);
     console.log(`[send-command] Response: ${JSON.stringify(response)}`);
-    res.json({ response });
-  } catch (error) {
+
+    res.status(200).json({response});
+
+  } 
+  catch (error) 
+  {
     console.error("Error processing command:", error);
     res.status(500).send(`[send-command][500] Failed to process command: ${error}`);
   }

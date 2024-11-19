@@ -129,12 +129,22 @@ class CommandProcessor extends EventEmitter {
                         
                         // Check message content
                         if (simplifiedMessage.includes(normalized)) {
-                            this.resolveCurrentProcessing({
+
+                            const origin  = `\nMatched pattern: ${pattern} with message: ${originalMessage}`
+                            const success_result = {
                                 status: 'success',
                                 elapsedTime: Date.now() - this.startTime,
-                                matchIndex: i,
-                                contents: this.accumulatedMessages
-                            });
+                                match: pattern,
+                                text: originalMessage,
+                                embeds: message.embeds || [],            
+                                contents: this.accumulatedMessages,
+                                origin: origin
+                            }
+
+                            console.log(origin);
+                            console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+
+                            this.resolveCurrentProcessing(success_result);
                             return;
                         }
                         
@@ -154,12 +164,22 @@ class CommandProcessor extends EventEmitter {
                                 .trim();
                                 
                                 if (embedText.includes(normalized)) {
-                                    this.resolveCurrentProcessing({
+
+                                    const origin  = `\nMatched pattern: ${pattern} with embed: ${embedText}`
+                                    const success_result = {
                                         status: 'success',
                                         elapsedTime: Date.now() - this.startTime,
-                                        matchIndex: i,
-                                        contents: this.accumulatedMessages
-                                    });
+                                        match: pattern,
+                                        text: embedText,
+                                        embeds: [embed],
+                                        contents: this.accumulatedMessages,
+                                        origin: origin
+                                    }
+
+                                    console.log(origin);
+                                    console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+
+                                    this.resolveCurrentProcessing(success_result);
                                     return;
                                 }
                             }
@@ -178,11 +198,17 @@ class CommandProcessor extends EventEmitter {
                 } else {
                     // No patterns to match, resolve after accumulation timeout
                     this.accumulationTimeout = setTimeout(() => {
-                        this.resolveCurrentProcessing({
+                        const origin = `\nNo patterns to match, resolving after accumulation timeout`
+                        const success_result = {
                             status: 'success',
                             elapsedTime: Date.now() - this.startTime,
-                            contents: this.accumulatedMessages
-                        });
+                            contents: this.accumulatedMessages,
+                            origin: origin
+                        }
+                        console.log(origin);
+                        console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+
+                        this.resolveCurrentProcessing(success_result);
                     }, ACCUMULATION_TIMEOUT);
                 }
             }

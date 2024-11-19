@@ -42,7 +42,7 @@ class DiscordBot extends EventEmitter {
                     guildId: event.d?.guild_id,
                     fullData: event.d
                 });
-            } else {
+            } else if (event.t !== 'MESSAGE_CREATE') { // Skip MESSAGE_CREATE as we handle it separately
                 console.log('Raw event received:', {
                     type: event.t,
                     channelId: event.d?.channel_id,
@@ -52,8 +52,8 @@ class DiscordBot extends EventEmitter {
             }
         });
 
-        // Debug: Log all message events
-        this.client.on('messageCreate', message => {
+        // Handle all message events through messageCreate
+        this.client.on('messageCreate', async message => {
             console.log('MessageCreate event:', {
                 content: message.content,
                 channelType: message.channel.type,
@@ -62,19 +62,47 @@ class DiscordBot extends EventEmitter {
                 isDM: message.channel.type === ChannelType.DM,
                 guildId: message.guildId
             });
-        });
 
-        // Add specific handler for message delete events
-        this.client.on('messageDelete', message => {
-            console.log('Message deleted:', {
-                content: message.content,
-                author: message.author?.username,
-                channelId: message.channelId,
-                channelType: message.channel.type,
-                isDM: message.channel.type === ChannelType.DM,
-                wasFromBot: message.author?.bot,
-                messageId: message.id
+            // Ignore messages from our own bot to prevent loops
+            if (message.author.id === this.client.user.id) {
+                return;
+            }
+
+            const isDM = message.channel.type === ChannelType.DM;
+            const isFromActiveChannel = message.channelId === this.activeChannelId;
+            const isFromAvrae = message.author.username === 'Avrae';
+
+            // If it's a DM from Avrae, store the channel ID
+            if (isDM && isFromAvrae) {
+                this.dmChannels.add(message.channelId);
+            }
+
+            // Debug log for message filtering
+            console.log('Message filter check:', {
+                isDM,
+                isFromActiveChannel,
+                isFromAvrae,
+                willAccept: isFromActiveChannel || (isDM && isFromAvrae)
             });
+
+            // Accept messages if they're either:
+            // 1. From the active channel, or
+            // 2. DMs from Avrae
+            if (isFromActiveChannel || (isDM && isFromAvrae)) {
+                const messageData = {
+                    content: message.content,
+                    author: message.author.username,
+                    discriminator: `${message.author.username}#${message.author.discriminator}`,
+                    channelId: message.channelId,
+                    isBot: message.author.bot,
+                    isDM: isDM,
+                    isActiveChannel: isFromActiveChannel,
+                    embeds: message.embeds
+                };
+
+                console.log('Discord service: Message event received:', messageData);
+                this.emit('message', messageData);
+            }
         });
 
         this.client.on(Events.ClientReady, () => {
@@ -96,97 +124,6 @@ class DiscordBot extends EventEmitter {
             );
             
             this.emit('ready');
-        });
-
-        // Process raw message events for better control
-        this.client.on('raw', async (event) => {
-            if (event.t === 'MESSAGE_CREATE') {
-                const data = event.d;
-                
-                // Get the channel to determine its type
-                const channel = await this.client.channels.fetch(data.channel_id).catch(err => {
-                    console.error('Error fetching channel:', err);
-                    return null;
-                });
-
-                if (!channel) {
-                    console.log('Could not fetch channel:', data.channel_id);
-                    return;
-                }
-
-                const isDM = channel.type === ChannelType.DM;
-                
-                // Log raw event with more details
-                console.log('Raw MESSAGE_CREATE event received:', {
-                    content: data.content,
-                    author: data.author.username,
-                    channelId: data.channel_id,
-                    channelType: channel.type,
-                    isDM: isDM,
-                    isFromAvrae: data.author.username === 'Avrae',
-                    embeds: data.embeds
-                });
-
-                // Ignore messages from our own bot to prevent loops
-                if (data.author.id === this.client.user.id) {
-                    return;
-                }
-
-                const isFromActiveChannel = data.channel_id === this.activeChannelId;
-                const isFromAvrae = data.author.username === 'Avrae';
-
-                // If it's a DM from Avrae, store the channel ID
-                if (isDM && isFromAvrae) {
-                    this.dmChannels.add(data.channel_id);
-                }
-
-                // Debug log for message filtering
-                console.log('Message filter check:', {
-                    isDM,
-                    isFromActiveChannel,
-                    isFromAvrae,
-                    willAccept: isFromActiveChannel || (isDM && isFromAvrae)
-                });
-
-                // Accept messages if they're either:
-                // 1. From the active channel, or
-                // 2. DMs from Avrae
-                if (isFromActiveChannel || (isDM && isFromAvrae)) {
-                    // Emit message event with full data
-                    this.emit('message', {
-                        content: data.content,
-                        author: `${data.author.username}`,
-                        discriminator: `${data.author.username}#${data.author.discriminator}`,
-                        channelId: data.channel_id,
-                        isBot: data.author.bot,
-                        isDM: isDM,
-                        isActiveChannel: isFromActiveChannel,
-                        embeds: data.embeds
-                    });
-                }
-            }
-        });
-
-        // Handle direct messages specifically
-        this.client.on(Events.MessageCreate, message => {
-            if (message.channel.type === ChannelType.DM && message.author.username === 'Avrae') {
-                console.log('Direct message from Avrae received:', {
-                    content: message.content,
-                    embeds: message.embeds,
-                    channelId: message.channelId
-                });
-                
-                // Emit message event with full data
-                this.emit('message', {
-                    content: message.content,
-                    author: `${message.author.username}#${message.author.discriminator}`,
-                    channelId: message.channelId,
-                    isBot: message.author.bot,
-                    isDM: true,
-                    isActiveChannel: false,
-                    embeds: message.embeds
-                });
-            }
         });
 
         // Keep MessageCreate for initialization command only
