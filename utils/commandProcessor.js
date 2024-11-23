@@ -32,7 +32,7 @@ class CommandProcessor extends EventEmitter {
         this.discordService.on('message', (message) => this.handleDiscordMessage(message));
     }
 
-    async processCommand(messageText, botUsername, humanUsername, patterns = []) {
+    async processCommand(messageText, botUsername, humanUsername, patterns = [], pinnedMessage = null) {
         if (this.state === STATES.PROCESSING) {
             throw new Error('Already processing a message');
         }
@@ -46,6 +46,7 @@ class CommandProcessor extends EventEmitter {
         this.accumulatedMessages = [];
         this.patterns = patterns;
         this.gotBotResponse = false;
+        this.pinnedMessage = pinnedMessage; // Store pinned message
         
         console.log('\nProcessing command with:', {
             messageId,
@@ -81,7 +82,13 @@ class CommandProcessor extends EventEmitter {
                     status: 'error',
                     elapsedTime: Date.now() - this.startTime,
                     error: 'No response from bot',
-                    contents: this.accumulatedMessages
+                    contents: this.accumulatedMessages,
+                    messages: this.accumulatedMessages.map(m => ({
+                        text: m.text,
+                        embeds: m.embeds || []
+                    })),
+                    map_urls: [],
+                    image_urls: []
                 });
                 this.resetState();
             }, INITIAL_TIMEOUT);
@@ -132,7 +139,8 @@ class CommandProcessor extends EventEmitter {
             this.accumulatedMessages.push({
                 sender: this.botUsername,
                 text: originalMessage,
-                embeds: message.embeds || []
+                embeds: message.embeds || [],
+                pinnedMessage: this.pinnedMessage // Include pinned message in accumulated messages
             });
 
             // Check for pattern matches if we have patterns
@@ -142,9 +150,8 @@ class CommandProcessor extends EventEmitter {
                     const pattern = this.patterns[i];
                     const normalized = pattern.trim().toLowerCase();
                     
-                    // Check message content
+                    // 1. First check message content
                     if (simplifiedMessage.includes(normalized)) {
-
                         const origin  = `\nMatched pattern: ${pattern} with message: ${originalMessage}`
                         const success_result = {
                             status: 'success',
@@ -153,34 +160,39 @@ class CommandProcessor extends EventEmitter {
                             text: originalMessage,
                             embeds: message.embeds || [],            
                             contents: this.accumulatedMessages,
-                            origin: origin
+                            messages: this.accumulatedMessages.map(m => ({
+                                text: m.text,
+                                embeds: m.embeds || []
+                            })),
+                            origin: origin,
+                            matched_on: 'text',
+                            map_urls: [],
+                            image_urls: []
                         }
-
                         console.log(origin);
                         console.log(`\nResponse: ${JSON.stringify(success_result)}`);
-
                         this.resolveCurrentProcessing(success_result);
                         return;
                     }
                     
-                    // Check embeds
+                    // 2. Then check embeds
                     if (message.embeds && message.embeds.length > 0) {
                         for (const embed of message.embeds) {
                             const embedText = [
-                                embed.author?.name || '',  // Include author name
+                                embed.author?.name || '',
                                 embed.title || '',
                                 embed.description || '',
-                                ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`)
+                                ...(embed.fields || []).map(f => `${(f.name || '')} ${(f.value || '')}`),
+                                embed.footer?.text || ''
                             ]
-                            .filter(text => text) // Remove empty strings
+                            .filter(text => text)
                             .join(' ')
                             .toLowerCase()
-                            .replace(/[^\w\s]/g, '') // Remove special characters
-                            .replace(/\s+/g, ' ')    // Normalize whitespace
+                            .replace(/[^\w\s]/g, '')
+                            .replace(/\s+/g, ' ')
                             .trim();
                             
                             if (embedText.includes(normalized)) {
-
                                 const origin  = `\nMatched pattern: ${pattern} with embed: ${embedText}`
                                 const success_result = {
                                     status: 'success',
@@ -189,28 +201,70 @@ class CommandProcessor extends EventEmitter {
                                     text: embedText,
                                     embeds: [embed],
                                     contents: this.accumulatedMessages,
-                                    origin: origin
+                                    messages: this.accumulatedMessages.map(m => ({
+                                        text: m.text,
+                                        embeds: m.embeds || []
+                                    })),
+                                    origin: origin,
+                                    matched_on: 'embed',
+                                    map_urls: [],
+                                    image_urls: []
                                 }
-
                                 console.log(origin);
                                 console.log(`\nResponse: ${JSON.stringify(success_result)}`);
-
                                 this.resolveCurrentProcessing(success_result);
                                 return;
                             }
                         }
                     }
-
-                    // Set timeout to wait for more messages that might match
-                    this.accumulationTimeout = setTimeout(() => {
-                        this.resolveCurrentProcessing({
-                            status: 'error',
-                            elapsedTime: Date.now() - this.startTime,
-                            error: 'No pattern match found',
-                            contents: this.accumulatedMessages
-                        });
-                    }, ACCUMULATION_TIMEOUT);
+                    
+                    // 3. Finally check pinned message if available
+                    if (this.pinnedMessage) {
+                        const pinnedText = this.pinnedMessage.content || '';
+                        const simplifiedPinned = pinnedText.toLowerCase();
+                        
+                        if (simplifiedPinned.includes(normalized)) {
+                            const origin = `\nMatched pattern: ${pattern} with pinned message: ${pinnedText}`
+                            const success_result = {
+                                status: 'success',
+                                elapsedTime: Date.now() - this.startTime,
+                                match: pattern,
+                                text: pinnedText,
+                                embeds: this.pinnedMessage.embeds || [],
+                                contents: this.accumulatedMessages,
+                                messages: this.accumulatedMessages.map(m => ({
+                                    text: m.text,
+                                    embeds: m.embeds || []
+                                })),
+                                origin: origin,
+                                matched_on: 'pinned',
+                                map_urls: [],
+                                image_urls: []
+                            }
+                            console.log(origin);
+                            console.log(`\nResponse: ${JSON.stringify(success_result)}`);
+                            this.resolveCurrentProcessing(success_result);
+                            return;
+                        }
+                    }
                 }
+
+                // Set timeout to wait for more messages that might match
+                this.accumulationTimeout = setTimeout(() => {
+                    this.resolveCurrentProcessing({
+                        status: 'error',
+                        elapsedTime: Date.now() - this.startTime,
+                        error: 'No pattern match found',
+                        contents: this.accumulatedMessages,
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        matched_on: 'n/a',
+                        map_urls: [],
+                        image_urls: []
+                    });
+                }, ACCUMULATION_TIMEOUT);
             } else {
                 // No patterns to match, resolve after accumulation timeout
                 this.accumulationTimeout = setTimeout(() => {
@@ -219,7 +273,14 @@ class CommandProcessor extends EventEmitter {
                         status: 'success',
                         elapsedTime: Date.now() - this.startTime,
                         contents: this.accumulatedMessages,
-                        origin: origin
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        origin: origin,
+                        matched_on: 'n/a',
+                        map_urls: [],
+                        image_urls: []
                     }
                     console.log(origin);
                     console.log(`\nResponse: ${JSON.stringify(success_result)}`);
@@ -228,6 +289,93 @@ class CommandProcessor extends EventEmitter {
                 }, ACCUMULATION_TIMEOUT);
             }
         }
+    }
+
+    // Helper to extract and categorize URLs from text
+    extractUrls(text) {
+        const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
+        const urls = text.match(urlRegex) || [];
+        return urls.reduce((acc, url) => {
+            // Only otfbm.io URLs are considered maps
+            if (url.includes('otfbm.io')) {
+                acc.mapUrls.push(url); // Add the battle map URL
+                
+                // Extract background URL if present
+                const bgMatch = url.match(/[?&]bg=(https?:\/\/[^&]+)/);
+                if (bgMatch) {
+                    const bgUrl = decodeURIComponent(bgMatch[1]);
+                    if (bgUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) {
+                        acc.mapUrls.push(bgUrl);
+                    }
+                }
+            }
+            // All other image URLs go to imageUrls
+            else if (url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)) {
+                acc.imageUrls.push(url);
+            }
+            return acc;
+        }, { mapUrls: [], imageUrls: [] });
+    }
+
+    // Helper to extract URLs from embeds
+    extractUrlsFromEmbed(embed) {
+        const urls = { mapUrls: [], imageUrls: [] };
+        
+        // Check embed image
+        if (embed.image && embed.image.url) {
+            const { mapUrls, imageUrls } = this.extractUrls(embed.image.url);
+            urls.mapUrls.push(...mapUrls);
+            urls.imageUrls.push(...imageUrls);
+        }
+
+        // Check embed thumbnail
+        if (embed.thumbnail && embed.thumbnail.url) {
+            const { mapUrls, imageUrls } = this.extractUrls(embed.thumbnail.url);
+            urls.mapUrls.push(...mapUrls);
+            urls.imageUrls.push(...imageUrls);
+        }
+
+        // Check embed description
+        if (embed.description) {
+            const { mapUrls, imageUrls } = this.extractUrls(embed.description);
+            urls.mapUrls.push(...mapUrls);
+            urls.imageUrls.push(...imageUrls);
+        }
+
+        // Check for proxy URLs which might be different versions of the same image
+        if (embed.image && embed.image.proxy_url) {
+            const { mapUrls, imageUrls } = this.extractUrls(embed.image.proxy_url);
+            urls.mapUrls.push(...mapUrls);
+            urls.imageUrls.push(...imageUrls);
+        }
+        if (embed.thumbnail && embed.thumbnail.proxy_url) {
+            const { mapUrls, imageUrls } = this.extractUrls(embed.thumbnail.proxy_url);
+            urls.mapUrls.push(...mapUrls);
+            urls.imageUrls.push(...imageUrls);
+        }
+
+        return urls;
+    }
+
+    // Helper to collect URLs from accumulated messages
+    collectUrlsFromMessages() {
+        return this.accumulatedMessages.reduce((acc, message) => {
+            // Extract from message text
+            const textUrls = this.extractUrls(message.text || '');
+            acc.mapUrls.push(...textUrls.mapUrls);
+            acc.imageUrls.push(...textUrls.imageUrls);
+
+            // Extract from embeds
+            if (message.embeds && Array.isArray(message.embeds)) {
+                message.embeds.forEach(embed => {
+                    const embedUrls = this.extractUrlsFromEmbed(embed);
+                    acc.mapUrls.push(...embedUrls.mapUrls);
+                    acc.imageUrls.push(...embedUrls.imageUrls);
+                });
+            }
+
+            return acc;
+        }, { mapUrls: [], imageUrls: [] });
     }
 
     resolveCurrentProcessing(result) {
@@ -240,9 +388,14 @@ class CommandProcessor extends EventEmitter {
             this.initialTimeout = null;
         }
         if (this.resolve) {
+            // Add collected URLs to the result
+            const { mapUrls, imageUrls } = this.collectUrlsFromMessages();
+            result.map_urls = [...new Set(mapUrls)]; // Remove duplicates
+            result.image_urls = [...new Set(imageUrls)]; // Remove duplicates
+            
             this.resolve(result);
+            this.resetState();
         }
-        this.resetState();
     }
 
     resetState() {
@@ -260,6 +413,7 @@ class CommandProcessor extends EventEmitter {
         this.initialTimeout = null;
         this.accumulationTimeout = null;
         this.seenMessages = null;
+        this.pinnedMessage = null;
     }
 
     async deliverToRenderer(message) {

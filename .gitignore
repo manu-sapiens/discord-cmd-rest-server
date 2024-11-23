@@ -5,3 +5,4 @@ out/
 help/
 response.json
 dist/
+logs/

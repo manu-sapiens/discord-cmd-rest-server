@@ -47,6 +47,7 @@ rooms:
       background: "cave_treasure"  # Optional: using cave_treasure for the treasure room
     description: "A room with a chest filled with gold."
     connections:
+      - passage_1_and_2
       - secret_door_2_and_3
     loot: loot_room_3
 connections:
@@ -57,9 +58,7 @@ connections:
     type: "passage"
     status: "unblocked"
   - connection_id: secret_door_2_and_3
-    connect: 
-      - room_2
-      - room_3
+    connect: room_2, room_3
     type: "secret_door"
     status: "hidden"
     dc_type: "perception"
@@ -93,4 +92,6 @@ monsters:
         level: 1
       - spell_id: "Shield"
         level: 1
-    spell_slots: [1, 4]
+    spell_slots:
+      - 1, 4
+

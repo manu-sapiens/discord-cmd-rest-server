@@ -4,7 +4,7 @@ const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { getMainWindow, setMainWindow } = require('./utils/windowManager');
-const { createImageViewerWindow } = require('./utils/imageViewerManager');
+const { createMapWindow, createGalleryWindow } = require('./utils/imageViewerManager');
 const { initialize: initializeDiscordService } = require('./discord/service');
 require('dotenv').config();
 
@@ -12,6 +12,7 @@ require('dotenv').config();
 const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
 const server = express();
 server.use(bodyParser.json());
+server.use(express.json());
 
 // Initialize Discord Service
 const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -34,6 +35,9 @@ const dungeonRoute = require('./routes/places/dungeon');
 const messageRoute = require('./routes/discord/message');
 const commandRoute = require('./routes/discord/command');
 const healthRoute = require('./routes/health');
+const mapRendererRoute = require('./routes/renderer/map');
+const mapRoute = require('./routes/discord/map');
+const imageRoute = require('./routes/discord/image');
 
 // Register routes
 server.use('/places/rooms', roomRoute);
@@ -42,6 +46,9 @@ server.use('/places/dungeon', dungeonRoute);
 server.use('/discord/message', messageRoute);
 server.use('/discord/command', commandRoute);
 server.use('/health', healthRoute);
+server.use('/renderer/map', mapRendererRoute);
+server.use('/discord/map', mapRoute);
+server.use('/discord/image', imageRoute);
 
 // Start server
 server.listen(PORT, () => {
@@ -63,8 +70,9 @@ function createWindow() {
 
     setMainWindow(win);
 
-    // Create image viewer window
-    createImageViewerWindow();
+    // Create map and gallery windows
+    createMapWindow();
+    createGalleryWindow();
 
     win.webContents.setUserAgent(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36"

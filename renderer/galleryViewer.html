@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Gallery</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #gallery {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-right: 10px;
+        }
+
+        .image-container {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .image-container img {
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: max-height 0.3s ease;
+        }
+
+        .image-container.expanded img {
+            max-height: none;
+        }
+
+        .image-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .image-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: #3d3d3d;
+            border: none;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #4d4d4d;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3d3d3d;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4d4d4d;
+        }
+    </style>
+</head>
+<body>
+    <div id="gallery"></div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        function createImageElement(imageData) {
+            const container = document.createElement('div');
+            container.className = 'image-container';
+
+            const img = document.createElement('img');
+            img.src = imageData.url;
+            img.alt = 'Gallery Image';
+
+            const info = document.createElement('div');
+            info.className = 'image-info';
+            info.textContent = `Added: ${new Date(imageData.timestamp).toLocaleString()}`;
+            if (imageData.command) {
+                info.textContent += ` | Command: ${imageData.command}`;
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'image-actions';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.textContent = 'Expand';
+            toggleBtn.onclick = () => {
+                container.classList.toggle('expanded');
+                toggleBtn.textContent = container.classList.contains('expanded') ? 'Collapse' : 'Expand';
+            };
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'Remove';
+            removeBtn.onclick = () => container.remove();
+
+            actions.appendChild(toggleBtn);
+            actions.appendChild(removeBtn);
+
+            container.appendChild(img);
+            container.appendChild(info);
+            container.appendChild(actions);
+
+            return container;
+        }
+
+        // Gallery handling
+        ipcRenderer.on('update-gallery', (event, imageData) => {
+            const gallery = document.getElementById('gallery');
+            gallery.insertBefore(createImageElement(imageData), gallery.firstChild);
+        });
+
+        ipcRenderer.on('clear-gallery', () => {
+            document.getElementById('gallery').innerHTML = '';
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 const { Client, Events, GatewayIntentBits, ChannelType, Partials } = require('discord.js');
 const { EventEmitter } = require('events');
 const { setAutomationStarted } = require('../state');
+const logManager = require('../log_manager');
 
 class DiscordBot extends EventEmitter {
     constructor(token) {
@@ -85,6 +86,13 @@ class DiscordBot extends EventEmitter {
 
             // Only handle $start command here
             if (message.content.trim() === '$start') {
+                // Start a new logging session
+                const oldSession = logManager.getCurrentSession();
+                await logManager.beginNewSession();
+                const newSession = logManager.getCurrentSession();
+                console.log(`[Discord Bot] Started new logging session: ${newSession.sessionId}${
+                    oldSession.sessionId ? ` (replaced ${oldSession.sessionId})` : ''
+                }`);
 
                 this.activeChannelId = message.channelId;
                 this.activeChannel = message.channel;
@@ -129,16 +137,16 @@ class DiscordBot extends EventEmitter {
         });
 
         // Add debug event handler
-        this.client.on('debug', (info) => {
-            console.log('Discord Debug:', info);
-        });
+        //this.client.on('debug', (info) => {
+        //    console.log('Discord Debug:', info);
+        //});
     }
 
     getActiveChannel() {
         return this.activeChannelId;
     }
 
-    getActiveChannelInfo() {
+    async getActiveChannelInfo() {
         return {
             channelId: this.activeChannelId,
             channelName: this.activeChannel?.name,
@@ -146,8 +154,34 @@ class DiscordBot extends EventEmitter {
             guildId: this.activeChannel?.guild?.id,
             guildName: this.activeChannel?.guild?.name,
             botId: this.client.user.id,
-            botName: this.client.user.tag
+            botName: this.client.user.tag,
+            pinnedMessage: await this.getPinnedMessage()
         };
+    }
+
+    async getPinnedMessage() {
+        if (!this.activeChannel) {
+            return null;
+        }
+
+        try {
+            const pinnedMessages = await this.activeChannel.messages.fetchPinned();
+            const firstPinned = pinnedMessages.first();
+            
+            if (!firstPinned) {
+                return null;
+            }
+
+            return {
+                content: firstPinned.content,
+                embeds: firstPinned.embeds,
+                author: firstPinned.author.username,
+                timestamp: firstPinned.createdTimestamp
+            };
+        } catch (error) {
+            console.error('Error fetching pinned message:', error);
+            return null;
+        }
     }
 
     async start() {

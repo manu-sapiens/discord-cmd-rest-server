@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Map Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #mapContainer {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #mapImage {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <div id="mapContainer">
+        <img id="mapImage" alt="Map">
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        // Map handling
+        ipcRenderer.on('update-map', (event, url) => {
+            document.getElementById('mapImage').src = url;
+        });
+    </script>
+</body>
+</html>

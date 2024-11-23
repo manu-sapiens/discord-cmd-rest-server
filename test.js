@@ -1,16 +1,21 @@
 // test.js
 const readline = require('readline');
 const fetch = require('node-fetch');
+const { updateMap } = require('./utils/imageViewerManager');
 
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
 });
 
-const DISCORD_AUTOMATION_SERVER_PORT = 3037;
-const DISCORD_AUTOMATION_URL = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}/discord`;
-const DISCORD_AUTOMATION_MESSAGE_ENDPOINT = `${DISCORD_AUTOMATION_URL}/message`;
-const DISCORD_AUTOMATION_COMMAND_ENDPOINT = `${DISCORD_AUTOMATION_URL}/command`;
+// Constants
+const DISCORD_AUTOMATION_SERVER_PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
+const DISCORD_AUTOMATION_SERVER = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}`;
+const DISCORD_AUTOMATION_URL = `${DISCORD_AUTOMATION_SERVER}/discord`;
+const DISCORD_AUTOMATION_COMMAND_ENDPOINT = `${DISCORD_AUTOMATION_SERVER}/discord/command`;
+const DISCORD_AUTOMATION_MAP_ENDPOINT = `${DISCORD_AUTOMATION_SERVER}/discord/map`;
+const DISCORD_AUTOMATION_IMAGE_ENDPOINT = `${DISCORD_AUTOMATION_SERVER}/discord/image`;
+const MAP_RENDERER_ENDPOINT = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}/renderer/map`;
 
 let botUsername = 'Avrae';
 let humanUsername = 'manu_mercs';
@@ -18,21 +23,21 @@ let humanUsername = 'manu_mercs';
 const printHelp = () => {
     console.log(`
 Available commands:
-  Messages starting with '!' will use browser automation (e.g., "!roll 1d20")
-  
-Command formats:
-  1. Simple command: !command
-     Example: !init list
-  
-  2. Command with pattern matching: command|pattern1|pattern2|...
-     Example: !init list|current initiative
-     Example: !init list|current|next|previous
-     Example: !game status|Eldara
+  1. Command with optional pattern matching: text|pattern1|pattern2|...
+     Example: !game status|Brussae
+     Example: yes|combat end
+     Example: !i end|sure
+
+  2. Bot message: $bot <message>
+     Example: $bot hello there
+     Example: $bot !game status
 
 System commands:
   $info           - Display information about the active Discord channel
   $botname <n>    - Sets the bot name to <n> for future requests
   $username <n>   - Sets the username to <n> for future requests
+  $map <url>      - Opens a window to display the map at the given URL
+  $image <url>    - Opens a window to display the image at the given URL
   $help           - Displays this list of available commands
   $quit           - Exits the script
 `);
@@ -58,7 +63,90 @@ async function getChannelInfo() {
     }
 }
 
-async function sendCommand(messageText) {
+async function sendMessage(messageText) {
+    try {
+        const payload = {
+            message: messageText.trim(),
+            botUsername,  
+            humanUsername
+        };
+
+        console.log('\nSending POST request to:', DISCORD_AUTOMATION_URL + '/message');
+        console.log('Payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch(DISCORD_AUTOMATION_URL + '/message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        console.log('\nResponse status:', response.status);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        }
+
+        const data = await response.json();
+        console.log('\nReceived response:', JSON.stringify(data, null, 2));
+        handleResponse(data);
+        return data;
+    } catch (error) {
+        console.error('\nError sending message:', error);
+        throw error;
+    }
+}
+
+async function handleCommandResponse(response) {
+    // If response has map URLs, display the latest map
+    if (response.map_urls && response.map_urls.length > 0) {
+        const latestMap = response.map_urls[response.map_urls.length - 1];
+        try {
+            const mapResponse = await fetch(DISCORD_AUTOMATION_MAP_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageUrl: latestMap })
+            });
+            if (!mapResponse.ok) {
+                console.error('Error displaying map:', await mapResponse.text());
+            } else {
+                console.log('Map displayed successfully');
+            }
+        } catch (error) {
+            console.error('Error displaying map:', error);
+        }
+    }
+
+    // If response has image URLs, display them all in the gallery
+    if (response.image_urls && response.image_urls.length > 0) {
+        for (const imageUrl of response.image_urls) {
+            try {
+                const imageResponse = await fetch(DISCORD_AUTOMATION_IMAGE_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        imageUrl,
+                        metadata: {
+                            source: 'command_response',
+                            command: response.text || 'Unknown command',
+                            timestamp: new Date().toISOString()
+                        }
+                    })
+                });
+                if (!imageResponse.ok) {
+                    console.error('Error displaying image:', await imageResponse.text());
+                } else {
+                    console.log('Image added to gallery successfully');
+                }
+            } catch (error) {
+                console.error('Error displaying image:', error);
+            }
+        }
+    }
+}
+
+async function processCommand(messageText) {
     try {
         // Split the input to separate command from patterns
         const [command, ...patterns] = messageText.split('|');
@@ -91,44 +179,10 @@ async function sendCommand(messageText) {
         const data = await response.json();
         console.log('\nReceived response:', JSON.stringify(data, null, 2));
         handleResponse(data);
+        await handleCommandResponse(data);
         return data;
     } catch (error) {
         console.error('\nError sending command:', error);
-        throw error;
-    }
-}
-
-async function sendMessage(messageText) {
-    try {
-        const payload = {
-            message: messageText.trim(),
-            botUsername,  
-            humanUsername
-        };
-
-        console.log('\nSending POST request to:', DISCORD_AUTOMATION_MESSAGE_ENDPOINT);
-        console.log('Payload:', JSON.stringify(payload, null, 2));
-
-        const response = await fetch(DISCORD_AUTOMATION_MESSAGE_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-
-        console.log('\nResponse status:', response.status);
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log('\nReceived response:', JSON.stringify(data, null, 2));
-        handleResponse(data);
-        return data;
-    } catch (error) {
-        console.error('\nError sending message:', error);
         throw error;
     }
 }
@@ -196,46 +250,113 @@ function printContents(contents) {
     });
 }
 
-function promptUser() {
-    rl.question('> ', async (input) => {
-        try {
-            if (input.toLowerCase() === '$quit') {
-                console.log('Goodbye!');
-                process.exit(0);
-            } else if (input.toLowerCase() === '$help') {
-                printHelp();
-            } else if (input.toLowerCase() === '$info') {
-                await getChannelInfo();
-            } else if (input.toLowerCase().startsWith('$botname ')) {
-                botUsername = input.slice(9);
-                console.log(`Bot username set to: ${botUsername}`);
-            } else if (input.toLowerCase().startsWith('$username ')) {
-                humanUsername = input.slice(10);
-                console.log(`Human username set to: ${humanUsername}`);
-            } else if (input.startsWith('!')) {
-                try {
-                    await sendCommand(input);
-                } catch (error) {
-                    console.error('\nError executing command:', error.message);
-                    if (error.response) {
-                        console.error('Server response:', await error.response.text());
-                    }
-                }
-            } else if (!input.startsWith('$')) {
-                try {
-                    await sendMessage(input);
-                } catch (error) {
-                    console.error('\nError sending message:', error.message);
-                    if (error.response) {
-                        console.error('Server response:', await error.response.text());
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('\nUnexpected error:', error.message);
+async function promptUser() {
+    try {
+        const answer = await new Promise(resolve => {
+            rl.question('> ', resolve);
+        });
+
+        if (!answer || answer.trim() === '') {
+            return promptUser();
         }
-        promptUser();
-    });
+
+        const trimmedAnswer = answer.trim();
+
+        // Handle system commands
+        if (trimmedAnswer.startsWith('$')) {
+            const [command, ...args] = trimmedAnswer.slice(1).split(' ');
+            
+            switch (command) {
+                case 'bot':
+                    // Format: $bot <message>
+                    // Sends message via message route
+                    if (args.length > 0) {
+                        await sendMessage(args.join(' '));
+                    } else {
+                        console.log('Error: Bot message required');
+                    }
+                    break;
+                case 'map':
+                    // Format: $map <url>
+                    if (args[0]) {
+                        try {
+                            const response = await fetch(DISCORD_AUTOMATION_MAP_ENDPOINT, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ imageUrl: args[0] }),
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            console.log('Map window updated successfully');
+                        } catch (error) {
+                            console.error('Error updating map:', error.message);
+                        }
+                    } else {
+                        console.log('Error: Map URL required');
+                    }
+                    break;
+                case 'image':
+                    // Format: $image <url>
+                    if (args[0]) {
+                        try {
+                            const response = await fetch(DISCORD_AUTOMATION_IMAGE_ENDPOINT, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ imageUrl: args[0] }),
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            console.log('Image window updated successfully');
+                        } catch (error) {
+                            console.error('Error updating image:', error.message);
+                        }
+                    } else {
+                        console.log('Error: Image URL required');
+                    }
+                    break;
+                case 'info':
+                    await getChannelInfo();
+                    break;
+                case 'botname':
+                    if (args[0]) {
+                        botUsername = args[0];
+                        console.log(`Bot username set to: ${botUsername}`);
+                    }
+                    break;
+                case 'username':
+                    if (args[0]) {
+                        humanUsername = args[0];
+                        console.log(`Username set to: ${humanUsername}`);
+                    }
+                    break;
+                case 'help':
+                    printHelp();
+                    break;
+                case 'quit':
+                    console.log('Goodbye!');
+                    rl.close();
+                    return;
+                default:
+                    console.log('Unknown system command. Type $help for available commands.');
+            }
+        } else {
+            // Handle regular commands
+            await processCommand(trimmedAnswer);
+        }
+    } catch (error) {
+        console.error('Error:', error.message);
+    }
+
+    // Continue prompting
+    promptUser();
 }
 
 // Handle Ctrl+C gracefully
