@@ -76,21 +76,21 @@ class CommandProcessor extends EventEmitter {
             this.resolve = resolve;
             this.reject = reject;
 
-            // Initial timeout for bot response (20s)
+            // Set initial timeout for no response at all
             this.initialTimeout = setTimeout(() => {
-                this.reject({
-                    status: 'error',
-                    elapsedTime: Date.now() - this.startTime,
-                    error: 'No response from bot',
-                    contents: this.accumulatedMessages,
-                    messages: this.accumulatedMessages.map(m => ({
-                        text: m.text,
-                        embeds: m.embeds || []
-                    })),
-                    map_urls: [],
-                    image_urls: []
-                });
-                this.resetState();
+                if (!this.gotBotResponse) {
+                    console.log('[DEBUG] Initial timeout reached with no response');
+                    this.resolveCurrentProcessing({
+                        status: 'no-response',
+                        elapsedTime: Date.now() - this.startTime,
+                        error: 'No response received from bot',
+                        contents: [],
+                        messages: [],
+                        map_urls: [],
+                        image_urls: []
+                    });
+                    this.resetState();
+                }
             }, INITIAL_TIMEOUT);
 
             this.state = STATES.PROCESSING;
@@ -169,13 +169,13 @@ class CommandProcessor extends EventEmitter {
             console.log('[DEBUG] Setting new accumulation timeout');
             this.accumulationTimeout = setTimeout(() => {
                 console.log('[DEBUG] Accumulation timeout reached. Messages:', this.accumulatedMessages);
-                // If we have patterns but none matched, this is a timeout
+                // If we have patterns but none matched, this is a pattern match failure
                 if (this.patterns && this.patterns.length > 0) {
                     console.log('[DEBUG] Had patterns but none matched:', this.patterns);
                     this.resolveCurrentProcessing({
                         status: 'error',
                         elapsedTime: Date.now() - this.startTime,
-                        error: 'No pattern matches found in bot response',
+                        error: 'Response received but no pattern matches found',  // Updated error message
                         contents: this.accumulatedMessages,
                         messages: this.accumulatedMessages.map(m => ({
                             text: m.text,
@@ -184,6 +184,7 @@ class CommandProcessor extends EventEmitter {
                         map_urls: [],
                         image_urls: []
                     });
+                    this.resetState();
                 } else {
                     // No patterns - just return accumulated messages
                     console.log('[DEBUG] No patterns - returning accumulated messages');
@@ -198,6 +199,7 @@ class CommandProcessor extends EventEmitter {
                         map_urls: [],
                         image_urls: []
                     });
+                    this.resetState();
                 }
             }, ACCUMULATION_TIMEOUT);
 
@@ -350,7 +352,7 @@ class CommandProcessor extends EventEmitter {
                 // Set timeout to wait for more messages that might match
                 this.accumulationTimeout = setTimeout(() => {
                     this.resolveCurrentProcessing({
-                        status: 'error',
+                        status: 'no-response',
                         elapsedTime: Date.now() - this.startTime,
                         error: 'No pattern match found',
                         contents: this.accumulatedMessages,
@@ -362,6 +364,7 @@ class CommandProcessor extends EventEmitter {
                         map_urls: [],
                         image_urls: []
                     });
+                    this.resetState();
                 }, ACCUMULATION_TIMEOUT);
             } else {
                 // No patterns to match, resolve after accumulation timeout
@@ -384,6 +387,7 @@ class CommandProcessor extends EventEmitter {
                     console.log(`\nResponse: ${JSON.stringify(success_result)}`);
 
                     this.resolveCurrentProcessing(success_result);
+                    this.resetState();
                 }, ACCUMULATION_TIMEOUT);
             }
         }
@@ -486,10 +490,12 @@ class CommandProcessor extends EventEmitter {
             this.initialTimeout = null;
         }
         if (this.resolve) {
-            // Add collected URLs to the result
-            const { mapUrls, imageUrls } = this.collectUrlsFromMessages();
-            result.map_urls = [...new Set(mapUrls)]; // Remove duplicates
-            result.image_urls = [...new Set(imageUrls)]; // Remove duplicates
+            // Add collected URLs to the result if we have accumulated messages
+            if (this.accumulatedMessages && this.accumulatedMessages.length > 0) {
+                const { mapUrls, imageUrls } = this.collectUrlsFromMessages();
+                result.map_urls = [...new Set(mapUrls)]; // Remove duplicates
+                result.image_urls = [...new Set(imageUrls)]; // Remove duplicates
+            }
             
             this.resolve(result);
             this.resetState();
