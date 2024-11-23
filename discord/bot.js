@@ -2,6 +2,7 @@ const { Client, Events, GatewayIntentBits, ChannelType, Partials } = require('di
 const { EventEmitter } = require('events');
 const { setAutomationStarted } = require('../state');
 const logManager = require('../log_manager');
+require('dotenv').config();
 
 class DiscordBot extends EventEmitter {
     constructor(token) {
@@ -25,6 +26,8 @@ class DiscordBot extends EventEmitter {
         this.token = token;
         this.activeChannelId = null;
         this.activeChannel = null;
+        this.humanUsername = null;
+        this.botUsername = process.env.AVRAE_DISCORD_BOT_NAME;
 
         // Track DM channels
         this.dmChannels = new Set();
@@ -96,6 +99,8 @@ class DiscordBot extends EventEmitter {
 
                 this.activeChannelId = message.channelId;
                 this.activeChannel = message.channel;
+                this.humanUsername = message.author.username;
+
                 this.emit('channelInitialized', {
                     channelId: message.channelId,
                     channelName: message.channel.name,
@@ -154,7 +159,8 @@ class DiscordBot extends EventEmitter {
             guildId: this.activeChannel?.guild?.id,
             guildName: this.activeChannel?.guild?.name,
             botId: this.client.user.id,
-            botName: this.client.user.tag,
+            botName: this.botUsername,  // Use the bot name from env
+            humanUsername: this.humanUsername,
             pinnedMessage: await this.getPinnedMessage()
         };
     }

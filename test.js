@@ -17,9 +17,6 @@ const DISCORD_AUTOMATION_MAP_ENDPOINT = `${DISCORD_AUTOMATION_SERVER}/discord/ma
 const DISCORD_AUTOMATION_IMAGE_ENDPOINT = `${DISCORD_AUTOMATION_SERVER}/discord/image`;
 const MAP_RENDERER_ENDPOINT = `http://localhost:${DISCORD_AUTOMATION_SERVER_PORT}/renderer/map`;
 
-let botUsername = 'Avrae';
-let humanUsername = 'manu_mercs';
-
 const printHelp = () => {
     console.log(`
 Available commands:
@@ -34,8 +31,6 @@ Available commands:
 
 System commands:
   $info           - Display information about the active Discord channel
-  $botname <n>    - Sets the bot name to <n> for future requests
-  $username <n>   - Sets the username to <n> for future requests
   $map <url>      - Opens a window to display the map at the given URL
   $image <url>    - Opens a window to display the image at the given URL
   $help           - Displays this list of available commands
@@ -67,8 +62,6 @@ async function sendMessage(messageText) {
     try {
         const payload = {
             message: messageText.trim(),
-            botUsername,  
-            humanUsername
         };
 
         console.log('\nSending POST request to:', DISCORD_AUTOMATION_URL + '/message');
@@ -154,8 +147,6 @@ async function processCommand(messageText) {
         
         const payload = {
             message: trimmedCommand,
-            botUsername,  
-            humanUsername,
             patterns: patterns.length > 0 ? patterns.map(p => p.trim()) : []
         };
 
@@ -324,18 +315,6 @@ async function promptUser() {
                     break;
                 case 'info':
                     await getChannelInfo();
-                    break;
-                case 'botname':
-                    if (args[0]) {
-                        botUsername = args[0];
-                        console.log(`Bot username set to: ${botUsername}`);
-                    }
-                    break;
-                case 'username':
-                    if (args[0]) {
-                        humanUsername = args[0];
-                        console.log(`Username set to: ${humanUsername}`);
-                    }
                     break;
                 case 'help':
                     printHelp();

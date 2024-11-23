@@ -11,20 +11,19 @@ const logManager = require('../../log_manager');
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { message, botUsername, humanUsername, patterns } = req.body;
+  const { message, patterns } = req.body;
 
   if (!getAutomationStarted()) {
     return res.status(400).send("[send-command][400] Automation not started. Please start automation via the Menu.");
   }
 
-  if (!message || !botUsername || !humanUsername) {
-    return res.status(400).send("[send-command][400] Message, botUsername, and humanUsername are required.");
+  if (!message) {
+    return res.status(400).send("[send-command][400] Message is required.");
   }
 
   try {
     console.log("=================== [send-command] ===================");
     console.log(`[send-command] req = ${JSON.stringify(req.body)}`);
-    console.log(`[send-command] Processing command: ${message}, botUsername: ${botUsername}, humanUsername: ${humanUsername}`);
         
     // Get the singleton Discord service instance
     const discordService = getDiscordService();
@@ -32,9 +31,12 @@ router.post('/', async (req, res) => {
     // Ensure command processor has the Discord service
     commandProcessor.setDiscordService(discordService);
     
-    // Get channel info including pinned message first
+    // Get channel info including pinned message and usernames
     const channelInfo = await discordService.bot.getActiveChannelInfo();
+    const { botName: botUsername, humanUsername } = channelInfo;
     
+    console.log(`[send-command] Processing command: ${message}, botUsername: ${botUsername}, humanUsername: ${humanUsername}`);
+        
     const response = await commandProcessor.processCommand(
       message, 
       botUsername, 

@@ -99,22 +99,43 @@ class CommandProcessor extends EventEmitter {
 
     handleDiscordMessage(message) {
         if (this.state !== STATES.PROCESSING) {
+            console.log('[DEBUG] Ignoring message - not in processing state:', {
+                state: this.state,
+                message: message
+            });
             return;
         }
 
         // Track seen messages to prevent duplicates
         const messageKey = `${message.author}-${message.content}-${JSON.stringify(message.embeds)}`;
         if (this.seenMessages && this.seenMessages.has(messageKey)) {
+            console.log('[DEBUG] Ignoring duplicate message:', messageKey);
             return;
         }
 
-        console.log('Processing Discord message:', message);
-            
+        // Simple bot username comparison - we know exactly what to expect from .env
         const isBotUser = message.author === this.botUsername;
+
+        console.log('\n[DEBUG] Processing message:', {
+            messageAuthor: message.author,
+            expectedBotUsername: this.botUsername,
+            isBotUser,
+            messageContent: message.content,
+            patterns: this.patterns,
+            accumulatedMessages: this.accumulatedMessages.length,
+            gotBotResponse: this.gotBotResponse
+        });
+            
         const originalMessage = message.content.trim();
         const simplifiedMessage = originalMessage.toLowerCase();
 
         if (isBotUser) {
+            console.log('[DEBUG] Got bot response:', {
+                messageKey,
+                originalMessage,
+                embeds: message.embeds
+            });
+
             // Add message to seen set
             if (!this.seenMessages) {
                 this.seenMessages = new Set();
@@ -123,6 +144,7 @@ class CommandProcessor extends EventEmitter {
 
             // Clear initial timeout on first bot response
             if (!this.gotBotResponse) {
+                console.log('[DEBUG] First bot response received, clearing initial timeout');
                 this.gotBotResponse = true;
                 if (this.initialTimeout) {
                     clearTimeout(this.initialTimeout);
@@ -132,6 +154,7 @@ class CommandProcessor extends EventEmitter {
 
             // Reset accumulation timeout
             if (this.accumulationTimeout) {
+                console.log('[DEBUG] Clearing existing accumulation timeout');
                 clearTimeout(this.accumulationTimeout);
             }
             
@@ -140,18 +163,68 @@ class CommandProcessor extends EventEmitter {
                 sender: this.botUsername,
                 text: originalMessage,
                 embeds: message.embeds || [],
-                pinnedMessage: this.pinnedMessage // Include pinned message in accumulated messages
+                pinnedMessage: this.pinnedMessage
             });
+
+            console.log('[DEBUG] Setting new accumulation timeout');
+            this.accumulationTimeout = setTimeout(() => {
+                console.log('[DEBUG] Accumulation timeout reached. Messages:', this.accumulatedMessages);
+                // If we have patterns but none matched, this is a timeout
+                if (this.patterns && this.patterns.length > 0) {
+                    console.log('[DEBUG] Had patterns but none matched:', this.patterns);
+                    this.resolveCurrentProcessing({
+                        status: 'error',
+                        elapsedTime: Date.now() - this.startTime,
+                        error: 'No pattern matches found in bot response',
+                        contents: this.accumulatedMessages,
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        map_urls: [],
+                        image_urls: []
+                    });
+                } else {
+                    // No patterns - just return accumulated messages
+                    console.log('[DEBUG] No patterns - returning accumulated messages');
+                    this.resolveCurrentProcessing({
+                        status: 'success',
+                        elapsedTime: Date.now() - this.startTime,
+                        contents: this.accumulatedMessages,
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        map_urls: [],
+                        image_urls: []
+                    });
+                }
+            }, ACCUMULATION_TIMEOUT);
 
             // Check for pattern matches if we have patterns
             if (this.patterns && this.patterns.length > 0) {
+                console.log('[DEBUG] Checking patterns:', {
+                    patterns: this.patterns,
+                    messageContent: simplifiedMessage
+                });
                 // Look for pattern matches
                 for (let i = 0; i < this.patterns.length; i++) {
                     const pattern = this.patterns[i];
                     const normalized = pattern.trim().toLowerCase();
                     
+                    console.log('[DEBUG] Checking pattern:', {
+                        pattern,
+                        normalized,
+                        messageContent: simplifiedMessage,
+                        hasMatch: simplifiedMessage.includes(normalized)
+                    });
+                    
                     // 1. First check message content
                     if (simplifiedMessage.includes(normalized)) {
+                        console.log('[DEBUG] Found pattern match in message content:', {
+                            pattern,
+                            message: originalMessage
+                        });
                         const origin  = `\nMatched pattern: ${pattern} with message: ${originalMessage}`
                         const success_result = {
                             status: 'success',
@@ -177,6 +250,11 @@ class CommandProcessor extends EventEmitter {
                     
                     // 2. Then check embeds
                     if (message.embeds && message.embeds.length > 0) {
+                        console.log('[DEBUG] Checking embeds for pattern:', {
+                            pattern,
+                            embedCount: message.embeds.length
+                        });
+                        
                         for (const embed of message.embeds) {
                             const embedText = [
                                 embed.author?.name || '',
@@ -192,7 +270,17 @@ class CommandProcessor extends EventEmitter {
                             .replace(/\s+/g, ' ')
                             .trim();
                             
+                            console.log('[DEBUG] Checking embed text:', {
+                                pattern,
+                                embedText,
+                                hasMatch: embedText.includes(normalized)
+                            });
+                            
                             if (embedText.includes(normalized)) {
+                                console.log('[DEBUG] Found pattern match in embed:', {
+                                    pattern,
+                                    embed: embed
+                                });
                                 const origin  = `\nMatched pattern: ${pattern} with embed: ${embedText}`
                                 const success_result = {
                                     status: 'success',
@@ -223,7 +311,17 @@ class CommandProcessor extends EventEmitter {
                         const pinnedText = this.pinnedMessage.content || '';
                         const simplifiedPinned = pinnedText.toLowerCase();
                         
+                        console.log('[DEBUG] Checking pinned message for pattern:', {
+                            pattern,
+                            pinnedText,
+                            hasMatch: simplifiedPinned.includes(normalized)
+                        });
+                        
                         if (simplifiedPinned.includes(normalized)) {
+                            console.log('[DEBUG] Found pattern match in pinned message:', {
+                                pattern,
+                                pinnedMessage: this.pinnedMessage
+                            });
                             const origin = `\nMatched pattern: ${pattern} with pinned message: ${pinnedText}`
                             const success_result = {
                                 status: 'success',

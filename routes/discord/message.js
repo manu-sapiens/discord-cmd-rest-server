@@ -38,7 +38,7 @@ router.get('/info', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { message, botUsername, humanUsername, patterns } = req.body;
+  const { message } = req.body;
 
   if (!getAutomationStarted()) {
     return res.status(400).json({
