@@ -13,6 +13,7 @@ const STATES = {
 const INITIAL_TIMEOUT = 20000;  // 20 seconds for initial bot response
 const ACCUMULATION_TIMEOUT = 5000;  // 5 seconds for accumulating messages
 
+const human_start_time = Date.now();
 class CommandProcessor extends EventEmitter {
     constructor() {
         super();
@@ -37,6 +38,9 @@ class CommandProcessor extends EventEmitter {
             throw new Error('Already processing a message');
         }
 
+        // Set processing state FIRST before any async operations
+        this.state = STATES.PROCESSING;
+        
         const messageId = crypto.randomUUID();
         this.messageId = messageId;
         this.messageText = messageText;
@@ -69,6 +73,7 @@ class CommandProcessor extends EventEmitter {
         });
 
         if (!message_typed) {
+            this.resetState();  // Reset state if delivery fails
             throw new Error('Failed to deliver message to renderer');
         }
 
@@ -99,10 +104,10 @@ class CommandProcessor extends EventEmitter {
 
     handleDiscordMessage(message) {
         if (this.state !== STATES.PROCESSING) {
-            console.log('[DEBUG] Ignoring message - not in processing state:', {
-                state: this.state,
-                message: message
-            });
+            // console.log('[DEBUG] Ignoring message - not in processing state:', {
+            //     state: this.state,
+            //     message: message
+            // });
             return;
         }
 
@@ -144,7 +149,7 @@ class CommandProcessor extends EventEmitter {
 
             // Clear initial timeout on first bot response
             if (!this.gotBotResponse) {
-                console.log('[DEBUG] First bot response received, clearing initial timeout');
+                console.log('[DEBUG] First bot response received');
                 this.gotBotResponse = true;
                 if (this.initialTimeout) {
                     clearTimeout(this.initialTimeout);
@@ -154,8 +159,10 @@ class CommandProcessor extends EventEmitter {
 
             // Reset accumulation timeout
             if (this.accumulationTimeout) {
-                console.log('[DEBUG] Clearing existing accumulation timeout');
+                const elapsed_time = (Date.now() - this.startTime) / 1000;
+                console.log(`[DEBUG][${elapsed_time.toFixed(2)}] Clearing existing accumulation timeout`);
                 clearTimeout(this.accumulationTimeout);
+                this.accumulationTimeout = null;
             }
             
             // Store message
@@ -166,42 +173,13 @@ class CommandProcessor extends EventEmitter {
                 pinnedMessage: this.pinnedMessage
             });
 
-            console.log('[DEBUG] Setting new accumulation timeout');
-            this.accumulationTimeout = setTimeout(() => {
-                console.log('[DEBUG] Accumulation timeout reached. Messages:', this.accumulatedMessages);
-                // If we have patterns but none matched, this is a pattern match failure
-                if (this.patterns && this.patterns.length > 0) {
-                    console.log('[DEBUG] Had patterns but none matched:', this.patterns);
-                    this.resolveCurrentProcessing({
-                        status: 'error',
-                        elapsedTime: Date.now() - this.startTime,
-                        error: 'Response received but no pattern matches found',  // Updated error message
-                        contents: this.accumulatedMessages,
-                        messages: this.accumulatedMessages.map(m => ({
-                            text: m.text,
-                            embeds: m.embeds || []
-                        })),
-                        map_urls: [],
-                        image_urls: []
-                    });
-                    this.resetState();
-                } else {
-                    // No patterns - just return accumulated messages
-                    console.log('[DEBUG] No patterns - returning accumulated messages');
-                    this.resolveCurrentProcessing({
-                        status: 'success',
-                        elapsedTime: Date.now() - this.startTime,
-                        contents: this.accumulatedMessages,
-                        messages: this.accumulatedMessages.map(m => ({
-                            text: m.text,
-                            embeds: m.embeds || []
-                        })),
-                        map_urls: [],
-                        image_urls: []
-                    });
-                    this.resetState();
-                }
-            }, ACCUMULATION_TIMEOUT);
+            // Update last message time
+            this.lastMessageTime = Date.now();
+            
+            const elapsed_time = (Date.now() - this.startTime) / 1000;
+            console.log(`[DEBUG][${elapsed_time.toFixed(2)}] Starting accumulation checker`);
+
+            this.startAccumulationChecker();
 
             // Check for pattern matches if we have patterns
             if (this.patterns && this.patterns.length > 0) {
@@ -393,6 +371,56 @@ class CommandProcessor extends EventEmitter {
         }
     }
 
+    async startAccumulationChecker() {
+        if (this.isCheckingAccumulation) return; // Don't start if already running
+        
+        this.isCheckingAccumulation = true;
+        this.lastMessageTime = Date.now();
+
+        while (this.isCheckingAccumulation) {
+            const elapsed = Date.now() - this.lastMessageTime;
+            const total_elapsed = (Date.now() - this.startTime) / 1000;
+            
+            if (elapsed >= ACCUMULATION_TIMEOUT) {
+                console.log(`[DEBUG][${total_elapsed.toFixed(2)}] Accumulation time reached after ${elapsed}ms`);
+                console.log('[DEBUG] Messages accumulated:', this.accumulatedMessages);
+
+                // If we have patterns but none matched, this is a pattern match failure
+                if (this.patterns && this.patterns.length > 0) {
+                    console.log('[DEBUG] Had patterns but none matched:', this.patterns);
+                    this.resolveCurrentProcessing({
+                        status: 'error',
+                        elapsedTime: Date.now() - this.startTime,
+                        error: 'Response received but no pattern matches found',
+                        contents: this.accumulatedMessages,
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        map_urls: [],
+                        image_urls: []
+                    });
+                } else {
+                    console.log('[DEBUG] No patterns - returning accumulated messages');
+                    this.resolveCurrentProcessing({
+                        status: 'success',
+                        elapsedTime: Date.now() - this.startTime,
+                        contents: this.accumulatedMessages,
+                        messages: this.accumulatedMessages.map(m => ({
+                            text: m.text,
+                            embeds: m.embeds || []
+                        })),
+                        map_urls: [],
+                        image_urls: []
+                    });
+                }
+                break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 100)); // Sleep for 100ms
+        }
+    }
+
     // Helper to extract and categorize URLs from text
     extractUrls(text) {
         const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
@@ -481,14 +509,6 @@ class CommandProcessor extends EventEmitter {
     }
 
     resolveCurrentProcessing(result) {
-        if (this.accumulationTimeout) {
-            clearTimeout(this.accumulationTimeout);
-            this.accumulationTimeout = null;
-        }
-        if (this.initialTimeout) {
-            clearTimeout(this.initialTimeout);
-            this.initialTimeout = null;
-        }
         if (this.resolve) {
             // Add collected URLs to the result if we have accumulated messages
             if (this.accumulatedMessages && this.accumulatedMessages.length > 0) {
@@ -503,6 +523,14 @@ class CommandProcessor extends EventEmitter {
     }
 
     resetState() {
+        // Stop accumulation checker
+        this.isCheckingAccumulation = false;
+
+        // Clear any active timeouts
+        if (this.initialTimeout) {
+            clearTimeout(this.initialTimeout);
+        }
+
         this.state = STATES.IDLE;
         this.messageId = null;
         this.messageText = null;
@@ -518,6 +546,8 @@ class CommandProcessor extends EventEmitter {
         this.accumulationTimeout = null;
         this.seenMessages = null;
         this.pinnedMessage = null;
+        this.isCheckingAccumulation = false;
+        this.lastMessageTime = null;
     }
 
     async deliverToRenderer(message) {
