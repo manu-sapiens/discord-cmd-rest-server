@@ -1,0 +1,97 @@
+dungeon_id: dungeon1
+name: "Goblin Caves"
+level_min: 1
+level_max: 4
+recommended_party_size: 4
+description: "A classic dungeon crawl through a cave system inhabited by goblins."
+adventure_hook: "The villagers have hired the party to deal with goblins that have been raiding the village of Stony Brook. After a full day of searching the nearby forest, the party found some tracks they believe belongs to the goblins. As the sun is setting, they have followed the tracks to the entrance of a cave. The party can see a torch lit inside."
+rumors:
+  - "The goblins have been raiding the village at night."
+  - "The goblins are led by a powerful shaman named Yart."
+  - "The goblins have been stealing food and supplies."
+starting_room_id: room_1
+rooms:
+  - room_id: room_1
+    name: "Outside the Cave"
+    map_model:
+      size: [15, 15]
+      background: "Sinister Woodland"  # Optional: using forest background for outside
+    description: "In a clearing in the forest, the party finds the entrance to the goblin caves. The entrance is a dark hole in the cliff face with a dim light flickering inside barely visible. A big bush near the cave entrance hide two distracted goblin sentinels. Any noise (conversation, etc.) from the party will alert them and attack. If the party use stealth, the DC is 20."
+    connections:
+      - passage_1_and_2
+    monsters:
+      - regular_goblin
+      - regular_goblin
+    reinforcements:
+      - regular_goblin
+      - regular_goblin
+    
+  - room_id: room_2
+    name: "Cave Room"
+    map_model:
+      size: [10, 10]
+      background: "Arena Of Earth Desert Night"  # Optional: using cave_fire for the room with campfire
+    description: "A room with regular_goblin guards around a roaring campfire. The room center is brighly lit by the fire but there are plenty of dancing shadows at the edge. The goblins are playing cards and talking among themselves. The room has two exits, a passage leading back to room_1 and a secret door to room_3. The goblins will attack the party on sight."
+    connections:
+      - passage_1_and_2
+      - secret_door_2_and_3
+    monsters:
+      - regular_goblin
+      - regular_goblin
+      - regular_goblin
+      - yart_the_goblin_shaman
+    loot: loot_room_2
+  - room_id: room_3
+    name: "Pit"
+    map_model:
+      size: [10, 10]
+      background: "cave_treasure"  # Optional: using cave_treasure for the treasure room
+    description: "A room with a chest filled with gold."
+    connections:
+      - secret_door_2_and_3
+    loot: loot_room_3
+connections:
+  - connection_id: passage_1_and_2
+    connect: 
+      - room_1
+      - room_2
+    type: "passage"
+    status: "unblocked"
+  - connection_id: secret_door_2_and_3
+    connect: 
+      - room_2
+      - room_3
+    type: "secret_door"
+    status: "hidden"
+    dc_type: "perception"
+    dc: 15
+loot:
+  - loot_id: loot_room_2
+    room_id: room_2
+    value: 14.3
+    description: "A few trinkets among the goblins' things."
+  - loot_id: loot_room_3
+    room_id: room_3
+    description: "A chest filled with gold."
+    value: 100
+monsters:
+  - monster_id: regular_goblin
+    avrae_model: "Goblin"
+  - monster_id: yart_the_goblin_shaman
+    name: "Yart"
+    avrae_model: "Goblin"
+    hp: 30
+    ac: 15
+    attacks:
+      - name: "Evil Eye"
+        damage: "1d4+1 [Psychic]"
+        bonus: "5"
+    description: "Yart is a powerful goblin shaman that can cast a few spells."
+    spells:
+      - spell_id: "Ray of Frost"
+        level: 0
+      - spell_id: "Magic Missile"
+        level: 1
+      - spell_id: "Shield"
+        level: 1
+    spell_slots: [1, 4]

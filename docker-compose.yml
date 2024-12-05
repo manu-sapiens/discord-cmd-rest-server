@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3037:3037"  # Application port
+      - "5900:5900"  # VNC port
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      - DISPLAY=:1
+      - DISCORD_AUTOMATION_SERVER_PORT=3037
+    env_file:
+      - .env

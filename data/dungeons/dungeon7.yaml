@@ -1,0 +1,298 @@
+dungeon_id: dungeon1 
+name: "Goblin Caves"
+level_min: 1
+level_max: 4
+recommended_party_size: 4
+description: "A classic dungeon crawl through a cave system inhabited by goblins."
+adventure_hook: "The party finds themselves on a dusty road leading away from the village of Stony Brook. Behind them lies the village with its welcoming tavern, The Sleeping Dragon, while ahead the road winds into a dense forest. Recent travelers have warned of goblin raids in the area, and a passing merchant mentioned that the village elder has posted a reward for dealing with the menace. The party can either head to the tavern to gather more information from the locals or follow the forest path where villagers claim to have seen goblin tracks."
+rumors:
+  - "The goblins have been raiding the village at night."
+  - "The goblins are led by a powerful shaman named Yart."
+  - "The goblins have been stealing food and supplies."
+starting_room_id: dusty_road
+
+rooms:
+  - room_id: village
+    name: "Stony Brook Village"
+    map_model:
+      size: [16, 11]
+      background: "Roadside Rise"
+    description: "A peaceful village nestled in the valley. Recently, the villagers have been troubled by goblin raids. The village elder has posted a reward for dealing with the goblin menace."
+    connections:
+      - to_room_id: dusty_road
+        type: "path"
+        status: "unblocked"
+        description: "A cobblestone path winding towards the outskirts of the village."
+      - to_room_id: tavern
+        type: "path"
+        status: "unblocked"
+        description: "A short walkway leading to the warmly lit entrance of The Sleeping Dragon Tavern."
+
+  - room_id: tavern
+    name: "The Sleeping Dragon Tavern"
+    map_model:
+      size: [16, 11]
+      background: "Fighting Pit Muddy Light"
+    description: "A cozy tavern filled with the chatter of locals. The bartender is cleaning mugs while various patrons discuss recent events. With some convincing (DC 12 Persuasion or buying a round of drinks), the patrons might share what they know about the goblin raids. The more successful the roll, the more rumors they'll share."
+    connections:
+      - to_room_id: village
+        type: "path"
+        status: "unblocked"
+        description: "The tavern's exit opens back into the heart of Stony Brook Village."
+
+  - room_id: dusty_road
+    name: "Dusty Road"
+    map_model:
+      size: [16, 11]
+      background: "Roadside Rise"
+    description: "A well-worn dirt path connecting the village to the forest. The road is dusty from frequent travel, with wagon wheel ruts visible in the packed earth."
+    connections:
+      - to_room_id: village
+        type: "path"
+        status: "unblocked"
+        description: "The road leads back to the welcoming sights of Stony Brook Village."
+      - to_room_id: forest
+        type: "path"
+        status: "unblocked"
+        description: "The road continues into the dense forest ahead, with trees arching overhead."
+
+  - room_id: forest
+    name: "Dense Forest"
+    map_model:
+      size: [16, 11]
+      background: "Sinister Woodland Swamp Day Closed"
+    description: "A dense forest surrounds the village. The trees grow thick here, and the party can spot signs of goblin activity—broken branches and scattered footprints."
+    connections:
+      - to_room_id: dusty_road
+        type: "path"
+        status: "unblocked"
+        description: "A narrow trail leads back to the dusty road."
+      - to_room_id: clearing
+        type: "path"
+        status: "unblocked"
+        description: "A faint path through the trees heads towards a bright clearing."
+      - to_room_id: mysterious_tree
+        type: "path"
+        status: "unblocked"
+        description: "An overgrown trail veers off towards an ancient, towering tree."
+
+  - room_id: mysterious_tree
+    name: "Ancient Tree"
+    map_model:
+      size: [16, 11]
+      background: "Winter Wilderness Lonely Oak Day A"
+    description: "An enormous ancient tree stands here, its trunk wider than any other in the forest. Its roots create natural alcoves, and there are signs that the goblins sometimes use this as a meeting spot."
+    connections:
+      - to_room_id: forest
+        type: "path"
+        status: "unblocked"
+        description: "The path back to the forest is partially hidden by low-hanging branches."
+
+  - room_id: clearing
+    name: "Forest Clearing"
+    map_model:
+      size: [16, 11]
+      background: "Green Hill Old Oak Day"
+    description: "A natural clearing in the forest. From here, you can see the cliff face where the goblin cave entrance is located. The tracks lead towards a long, dark corridor. A wolf is prowling and sniffing around but not otherwise hostile."
+    connections:
+      - to_room_id: forest
+        type: "path"
+        status: "unblocked"
+        description: "The tree line marks the edge of the dense forest you've just exited."
+      - to_room_id: room_1
+        type: "passage"
+        status: "unblocked"
+        description: "A narrow, rocky passage leading into the dark entrance of a cave."
+    monsters:
+      - wolf
+
+  - room_id: room_1
+    name: "Long Dark Corridor"
+    map_model:
+      size: [16, 11]
+      background: "Hillside Cave"
+    description: "A long, dark corridor leads deeper into the cave system. The walls are rough-hewn, and the air grows cooler as you proceed deeper."
+    connections:
+      - to_room_id: clearing
+        type: "passage"
+        status: "unblocked"
+        description: "The corridor opens back into the forest clearing, light filtering in faintly."
+      - to_room_id: room_2
+        type: "passage"
+        status: "unblocked"
+        description: "The corridor continues deeper into darkness, with damp walls closing in."
+
+  - room_id: room_2
+    name: "Goblin Guard Room"
+    map_model:
+      size: [16, 11]
+      background: "Arena Of Earth Desert Night"
+    description: "A room with goblin guards around a roaring campfire. The room center is brightly lit by the fire but there are plenty of dancing shadows at the edge. The goblins are playing cards and talking among themselves. The room has multiple exits, including passages leading to other parts of the cave system. The goblins will attack the party on sight."
+    connections:
+      - to_room_id: room_1
+        type: "passage"
+        status: "unblocked"
+        description: "A passage leading back towards the cave entrance."
+      - to_room_id: room_3
+        type: "secret_door"
+        status: "hidden"
+        dc_type: "perception"
+        dc: 15
+        description: "An almost imperceptible crack outlines a secret door in the cave wall."
+      - to_room_id: room_4
+        type: "passage"
+        status: "unblocked"
+        description: "A rough-hewn passage leading deeper into the goblin's lair."
+    monsters:
+      - regular_goblin
+      - regular_goblin
+      - regular_goblin
+    loot: loot_room_2
+
+  - room_id: room_3
+    name: "Hidden Treasure Room"
+    map_model:
+      size: [16, 11]
+      background: "Pit"
+    description: "A small chamber hidden behind a secret door, containing a chest filled with gold."
+    connections:
+      - to_room_id: room_2
+        type: "secret_door"
+        status: "hidden"
+        dc_type: "perception"
+        dc: 15
+        description: "A concealed door blends into the stone, leading back to the goblins' lair."
+    loot: loot_room_3
+
+  - room_id: room_4
+    name: "Goblin Barracks"
+    map_model:
+      size: [16, 11]
+      background: "Underground Dwarven Stronghold"
+    description: "A cluttered room filled with makeshift beds and goblin personal belongings. Several goblins rest here."
+    connections:
+      - to_room_id: room_2
+        type: "passage"
+        status: "unblocked"
+        description: "A narrow passage leads back to the guard room."
+      - to_room_id: room_5
+        type: "passage"
+        status: "unblocked"
+        description: "A wooden door leads further into the cave system."
+    monsters:
+      - regular_goblin
+      - regular_goblin
+
+  - room_id: room_5
+    name: "Goblin Shaman's Chamber"
+    map_model:
+      size: [16, 11]
+      background: "Cavern with Ritual Symbols"
+    description: "An eerie chamber filled with strange markings on the walls. Yart, the goblin shaman, resides here."
+    connections:
+      - to_room_id: room_4
+        type: "passage"
+        status: "unblocked"
+        description: "A heavy curtain covers the entrance back to the barracks."
+      - to_room_id: room_6
+        type: "locked_door"
+        status: "locked"
+        dc_type: "thieves' tools"
+        dc: 13
+        description: "A sturdy wooden door with a crude lock bars the way forward."
+    monsters:
+      - yart_the_goblin_shaman
+    loot: loot_room_5
+
+  - room_id: room_6
+    name: "Goblin Chief's Lair"
+    map_model:
+      size: [16, 11]
+      background: "Throne Room"
+    description: "The lair of the goblin chief, adorned with stolen goods and makeshift decorations. The goblin chief and his bodyguards are here."
+    connections:
+      - to_room_id: room_5
+        type: "locked_door"
+        status: "locked"
+        dc_type: "thieves' tools"
+        dc: 13
+        description: "A sturdy wooden door with a crude lock leads back to the shaman's chamber."
+    monsters:
+      - goblin_chief
+      - goblin_bodyguard
+      - goblin_bodyguard
+    loot: loot_room_6
+
+loot:
+  - loot_id: loot_room_2
+    room_id: room_2
+    value: 14.3
+    description: "A few trinkets among the goblins' things."
+
+  - loot_id: loot_room_3
+    room_id: room_3
+    description: "A chest filled with gold."
+    value: 100
+
+  - loot_id: loot_room_5
+    room_id: room_5
+    description: "A collection of strange herbs and a scroll of 'Burning Hands'."
+    items:
+      - "Scroll of Burning Hands"
+      - "Herbs (5 gp value)"
+    value: 55
+
+  - loot_id: loot_room_6
+    room_id: room_6
+    description: "The goblin chief's treasure hoard, including gold, gems, and a magical dagger."
+    items:
+      - "Magical Dagger +1"
+      - "Gold Coins (150 gp)"
+      - "Gemstones (3x50 gp gems)"
+    value: 300
+
+monsters:
+  - monster_id: regular_goblin
+    avrae_model: "Goblin"
+
+  - monster_id: wolf
+    avrae_model: "Wolf (free-rules)"
+
+  - monster_id: yart_the_goblin_shaman
+    name: "Yart"
+    avrae_model: "Goblin"
+    hp: 30
+    ac: 15
+    attacks:
+      - name: "Evil Eye"
+        damage: "1d4+1 [Psychic]"
+        bonus: "5"
+    description: "Yart is a powerful goblin shaman who can cast a few spells."
+    spells:
+      - spell_id: "Ray of Frost"
+        level: 0
+      - spell_id: "Magic Missile"
+        level: 1
+      - spell_id: "Shield"
+        level: 1
+    spell_slots: [1, 4]
+
+  - monster_id: goblin_chief
+    name: "Graz"
+    avrae_model: "Goblin Boss"
+    hp: 45
+    ac: 17
+    description: "Graz is the cunning and ruthless leader of the goblin tribe."
+    attacks:
+      - name: "Scimitar"
+        damage: "1d6+3 [Slashing]"
+        bonus: "5"
+      - name: "Javelin"
+        damage: "1d6+3 [Piercing]"
+        bonus: "5"
+
+  - monster_id: goblin_bodyguard
+    avrae_model: "Goblin"
+    hp: 15
+    ac: 15
+    description: "A loyal goblin warrior tasked with protecting the chief."
