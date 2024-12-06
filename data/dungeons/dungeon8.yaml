@@ -4,12 +4,12 @@ level_min: 1
 level_max: 4
 recommended_party_size: 4
 description: "A classic dungeon crawl through a cave system inhabited by goblins."
-adventure_hook: "The party finds themselves deep in a long, dark corridor of what appears to be the goblin caves they were sent to investigate. The village of Stony Brook has been suffering from goblin raids, and its elder posted a reward that drew them here. Light filters in faintly from the forest clearing ahead, while deeper in the corridor, they can hear the echoes of what might be goblin voices."
+adventure_hook: "The party finds themselves on a dusty road leading away from the village of Stony Brook. Behind them lies the village with its welcoming tavern, The Sleeping Dragon, while ahead the road winds into a dense forest. Recent travelers have warned of goblin raids in the area, and a passing merchant mentioned that the village elder has posted a reward for dealing with the menace. The party can either head to the tavern to gather more information from the locals or follow the forest path where villagers claim to have seen goblin tracks."
 rumors:
   - "The goblins have been raiding the village at night."
   - "The goblins are led by a powerful shaman named Yart."
   - "The goblins have been stealing food and supplies."
-starting_room_id: room_1
+starting_room_id: dusty_road
 
 rooms:
   - room_id: village
@@ -31,18 +31,6 @@ rooms:
       - to_room_id: elder_hut
         type: "path"
         description: "A narrow path leading to the elder's hut, surrounded by herbs and flowers."
-    states: []
-
-  - room_id: tavern
-    name: "The Sleeping Dragon Tavern"
-    map_model:
-      size: [16, 11]
-      background: "Tavern Day"
-    description: "A cozy tavern nestled in the shadows of the forest. A friendly barkeeper greets you warmly."
-    connections:
-      - to_room_id: village
-        type: "path"
-        description: "A short walkway leads back to the village center."
     states: []
 
   - room_id: dusty_road
@@ -143,11 +131,11 @@ rooms:
         current_description: "The campfire is lit and roaring. Goblins are playing cards and talking among themselves."
         spawned_monsters:
           - monster_id: regular_goblin
-            name: "Bald Goblin"
+            name: "Goblin A"
           - monster_id: regular_goblin
-            name: "Mustached Goblin"
+            name: "Goblin B"
           - monster_id: regular_goblin
-            name: "One-Eyed Goblin"
+            name: "Goblin C"
         waiting_monsters:
           - monster_id: orc
             name: "Orc Guard"
@@ -204,9 +192,9 @@ rooms:
         current_description: "Several goblins rest here, their belongings scattered about."
         spawned_monsters:
           - monster_id: regular_goblin
-            name: "Filthy Goblin"
+            name: "Goblin A"
           - monster_id: regular_goblin
-            name: "Scrawny Goblin"
+            name: "Goblin B"
         loot: "A few trinkets among the goblins' belongings."
 
   - room_id: room_5
@@ -251,9 +239,9 @@ rooms:
           - monster_id: goblin_chief
             name: "Graz"
           - monster_id: goblin_bodyguard
-            name: "Muscled Goblin Bodyguard"
+            name: "Bodyguard A"
           - monster_id: goblin_bodyguard
-            name: "Squinty Goblin Bodyguard"
+            name: "Bodyguard B"
         loot: "The goblin chief's treasure hoard, including gold, gems, and a magical dagger."
         locked_connections:
           - to_room_id: room_5
