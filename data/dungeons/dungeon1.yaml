@@ -134,7 +134,7 @@ rooms:
         description: "A passage leading back towards the cave entrance."
       - to_room_id: room_3
         type: "secret_door"
-        description: "An almost imperceptible crack outlines a secret door in the cave wall."
+        description: "An almost imperceptible crack outlines a secret door in the cave wall. NOTE: Do not reveal this to the players unless they are looking for it and succeed with a DC of 12."
       - to_room_id: room_4
         type: "passage"
         description: "A rough-hewn passage leading deeper into the goblin's lair."
@@ -352,3 +352,77 @@ rooms:
         defeated_monsters: []
         special_event: "The faerie offers to enchant a weapon if you pass a DC 15 Charisma (Persuasion) check. Failure causes the faerie to vanish, laughing mischievously."
         loot: "One enchanted weapon if successful."
+
+loot:
+  - loot_id: loot_room_2
+    room_id: room_2
+    value: 14.3
+    description: "A few trinkets among the goblins' things."
+
+  - loot_id: loot_room_3
+    room_id: room_3
+    description: "A chest filled with gold."
+    value: 100
+
+  - loot_id: loot_room_5
+    room_id: room_5
+    description: "A collection of strange herbs and a scroll of 'Burning Hands'."
+    items:
+      - "Scroll of Burning Hands"
+      - "Herbs (5 gp value)"
+    value: 55
+
+  - loot_id: loot_room_6
+    room_id: room_6
+    description: "The goblin chief's treasure hoard, including gold, gems, and a magical dagger."
+    items:
+      - "Magical Dagger +1"
+      - "Gold Coins (150 gp)"
+      - "Gemstones (3x50 gp gems)"
+    value: 300
+
+monsters:
+  - monster_id: regular_goblin
+    avrae_model: "Goblin"
+
+  - monster_id: wolf
+    avrae_model: "Wolf (free-rules)"
+
+  - monster_id: yart_the_goblin_shaman
+    name: "Yart"
+    avrae_model: "Goblin"
+    hp: 30
+    ac: 15
+    attacks:
+      - name: "Evil Eye"
+        damage: "1d4+1 [Psychic]"
+        bonus: "5"
+    description: "Yart is a powerful goblin shaman who can cast a few spells."
+    spells:
+      - spell_id: "Ray of Frost"
+        level: 0
+      - spell_id: "Magic Missile"
+        level: 1
+      - spell_id: "Shield"
+        level: 1
+    spell_slots: [1, 4]
+
+  - monster_id: goblin_chief
+    name: "Graz"
+    avrae_model: "Goblin Boss"
+    hp: 45
+    ac: 17
+    description: "Graz is the cunning and ruthless leader of the goblin tribe."
+    attacks:
+      - name: "Scimitar"
+        damage: "1d6+3 [Slashing]"
+        bonus: "5"
+      - name: "Javelin"
+        damage: "1d6+3 [Piercing]"
+        bonus: "5"
+
+  - monster_id: goblin_bodyguard
+    avrae_model: "Goblin"
+    hp: 15
+    ac: 15
+    description: "A loyal goblin warrior tasked with protecting the chief."
