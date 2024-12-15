@@ -29,9 +29,6 @@ initializeDiscordService(botToken).catch(error => {
 });
 
 // Routes (after Discord service initialization)
-const roomRoute = require('./routes/places/room');
-const modificationRoute = require('./routes/places/modifications');
-const dungeonRoute = require('./routes/places/dungeon');
 const messageRoute = require('./routes/discord/message');
 const commandRoute = require('./routes/discord/command');
 const healthRoute = require('./routes/health');
@@ -40,9 +37,6 @@ const mapRoute = require('./routes/discord/map');
 const imageRoute = require('./routes/discord/image');
 
 // Register routes
-server.use('/places/rooms', roomRoute);
-server.use('/places/modifications', modificationRoute);
-server.use('/places/dungeon', dungeonRoute);
 server.use('/discord/message', messageRoute);
 server.use('/discord/command', commandRoute);
 server.use('/health', healthRoute);
