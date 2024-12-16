@@ -9,7 +9,7 @@ const { initialize: initializeDiscordService } = require('./discord/service');
 require('dotenv').config();
 
 // Initialize Express server
-const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3037;
+const PORT = process.env.DISCORD_AUTOMATION_SERVER_PORT || 3137;
 const server = express();
 server.use(bodyParser.json());
 server.use(express.json());
